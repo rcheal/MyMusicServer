@@ -20,3 +20,7 @@ extension Single: PersistableRecord {
 extension Playlist: PersistableRecord {
     
 }
+
+extension Transaction: PersistableRecord, FetchableRecord {
+    
+}

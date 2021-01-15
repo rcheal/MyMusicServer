@@ -81,7 +81,7 @@ class Datastore {
             }
 
             
-            try db.create(table: "file") { t in
+            try db.create(table: "transaction") { t in
                 t.column("time", .text).primaryKey()
                 t.column("id", .text)
                 t.column("method", .text)           // 'GET', 'POST', 'PUT' or 'DELETE'
@@ -92,12 +92,57 @@ class Datastore {
         try migrator.migrate(dbQueue)
     }
 
-    func getAlbumList() -> [AlbumListItem] {
+    // MARK: Server functions
     
-        return []
+    func removeAll(user: String, password: String) throws {
+        func checkUserPassword(user: String, password: String) -> Bool {
+            if user == "bob" && password == "dulcimer" {
+                return true
+            }
+            return false
+        }
+        if checkUserPassword(user: user, password: password) {
+            
+        } else {
+            throw Abort(.unauthorized)
+        }
+
+    }
+    
+    func getTransactionList(since timestamp: String) throws -> [Transaction] {
+        return try dbQueue.read { db in
+            try Transaction.fetchAll(db, sql: "SELECT * FROM 'transaction' WHERE time >= ?",
+                                     arguments: [timestamp])
+        }
     }
     
     // MARK: Album functions
+    
+    func getAlbumList() throws -> [AlbumListItem] {
+        var albums: [AlbumListItem] = []
+        try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: "SELECT json FROM album")
+            for row in rows {
+                if let album = Album.decodeFrom(json: row["json"]) {
+                    let albumListItem = AlbumListItem(album)
+                    albums.append(albumListItem)
+                }
+            }
+        }
+        return albums
+    }
+    
+    func getAlbumCount() -> Int {
+        var count = -1
+        do {
+            try dbQueue.read { db in
+                count = try Album.fetchCount(db)
+            }
+        } catch {
+        }
+        return count
+    }
+
     /**
      Retrieves an album from the database
      
@@ -138,6 +183,8 @@ class Datastore {
                 """,
                 arguments: [album.id, album.json])
             
+            let transaction = Transaction(method: "POST", entity: "album", id: album.id)
+            try transaction.insert(db)
 
         }
     }
@@ -146,16 +193,20 @@ class Datastore {
         try dbQueue.write { db in
             var changes = 0
             do {
-                try db.execute(
-                    sql: """
-                        UPDATE album SET json = ? WHERE id = ?
-                    """,
-                    arguments: [album.json, album.id])
-                
-                changes = db.changesCount
+            try db.execute(
+                sql: """
+                    UPDATE album SET json = ? WHERE id = ?
+                """,
+                arguments: [album.json, album.id])
+            
+            changes = db.changesCount
             } catch {
                 throw Abort(.internalServerError)
             }
+            
+            let transaction = Transaction(method: "PUT", entity: "album", id: album.id)
+            try transaction.insert(db)
+
             if changes < 1 {
                 throw Abort(.notFound)
             }
@@ -189,6 +240,10 @@ class Datastore {
                 if !result {
                     throw Abort(.notFound)
                 }
+                
+                let transaction = Transaction(method: "DELETE", entity: "album", id: id)
+                try transaction.insert(db)
+                
             } catch is PersistenceError {
                 throw Abort(.notFound)
             }
@@ -203,7 +258,7 @@ class Datastore {
         }
     }
     
-    private func getAlbumURL(_ id: String) -> URL? {
+    private func getAlbumDirectoryURL(_ id: String) -> URL? {
         do {
             if let album = try getAlbum(id),
                let directory = album.directory {
@@ -216,14 +271,14 @@ class Datastore {
     }
     
     func getAlbumFilePath(_ id: String, filename: String) -> String? {
-        if let albumURL = getAlbumURL(id) {
+        if let albumURL = getAlbumDirectoryURL(id) {
             return albumURL.appendingPathComponent(filename).path
         }
         return nil
     }
     
     func getAlbumFile(_ id: String, filename: String) -> Data? {
-        if let albumURL = getAlbumURL(id) {
+        if let albumURL = getAlbumDirectoryURL(id) {
             let fileURL = albumURL.appendingPathComponent(filename)
             
             let fm = FileManager.default
@@ -233,7 +288,7 @@ class Datastore {
     }
     
     func postAlbumFile(_ id: String, filename: String, data: Data) throws {
-        if let albumURL = getAlbumURL(id) {
+        if let albumURL = getAlbumDirectoryURL(id) {
             let fileURL = albumURL.appendingPathComponent(filename)
             let fm = FileManager.default
             if !fm.fileExists(atPath: albumURL.path) {
@@ -248,7 +303,7 @@ class Datastore {
     }
     
     func putAlbumFile(_ id: String, filename: String, data: Data) throws {
-        if let albumURL = getAlbumURL(id) {
+        if let albumURL = getAlbumDirectoryURL(id) {
             let fileURL = albumURL.appendingPathComponent(filename)
             let fm = FileManager.default
             if fm.fileExists(atPath: fileURL.path) {
@@ -260,7 +315,7 @@ class Datastore {
     }
         
     func deleteAlbumFile(_ id: String, filename: String) throws {
-        if let albumURL = getAlbumURL(id) {
+        if let albumURL = getAlbumDirectoryURL(id) {
             let fileURL = albumURL.appendingPathComponent(filename)
             let fm = FileManager.default
             if fm.fileExists(atPath: fileURL.path) {
@@ -272,6 +327,35 @@ class Datastore {
     }
     
     // MARK: Single functions
+
+    func getSingleList() throws -> [SingleListItem] {
+        var singles: [SingleListItem] = []
+        try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: "SELECT json FROM single")
+            for row in rows {
+                if let single = Single.decodeFrom(json: row["json"]) {
+                    var singleListItem = SingleListItem(single)
+                    singleListItem.sortTitle = nil
+                    singleListItem.sortArtist = nil
+                    singleListItem.sortComposer = nil
+                    singles.append(singleListItem)
+                }
+            }
+        }
+        return singles
+    }
+    
+    func getSingleCount() -> Int {
+        var count = -1
+        do {
+            try dbQueue.read { db in
+                count = try Single.fetchCount(db)
+            }
+        } catch {
+        }
+        return count
+    }
+
     func getSingle(_ id: String) throws  -> Single? {
         var single: Single?
         try dbQueue.read { db in
@@ -290,6 +374,10 @@ class Datastore {
                     INSERT INTO single (id, json) VALUES (?, ?)
                 """,
                 arguments: [single.id, single.json])
+
+            let transaction = Transaction(method: "POST", entity: "single", id: single.id)
+            try transaction.insert(db)
+            
         }
     }
     
@@ -304,6 +392,10 @@ class Datastore {
                     arguments: [single.json, single.id])
                 
                 changes = db.changesCount
+
+                let transaction = Transaction(method: "PUT", entity: "single", id: single.id)
+                try transaction.insert(db)
+                
             } catch {
                 throw Abort(.internalServerError)
             }
@@ -312,7 +404,7 @@ class Datastore {
             }
          }
     }
-    
+
     func deleteSingle(_ id: String) throws {
         var directory: String?
         var filename: String?
@@ -331,7 +423,11 @@ class Datastore {
                 if !result {
                     throw Abort(.notFound)
                 }
-            } catch is PersistenceError {
+
+                let transaction = Transaction(method: "DELETE", entity: "single", id: id)
+                try transaction.insert(db)
+                
+             } catch is PersistenceError {
                 throw Abort(.notFound)
             }
             return result

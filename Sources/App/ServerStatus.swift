@@ -24,6 +24,7 @@ class ServerState {
             return String(hours) + ":" + String(minutes) + ":" + String(seconds)
         }
     }
+
     
     init() {
         startDate = Date()
@@ -38,14 +39,19 @@ struct ServerStatus: Content {
     var serverName: String
     var ipAddress: String
     var port: Int
-    var albumCount = 0
-    var singleCount = 0
+    var albumCount: Int
+    var singleCount: Int
+    var playlistCount: Int = 0
     var upTime: String
     
     init(_ app: Application) {
+        let ds = Datastore.shared()
+        
         upTime = serverState.upTime
         serverName = app.http.server.configuration.serverName ?? Host.current().localizedName ?? "Unknown"
         ipAddress = app.http.server.configuration.hostname
         port = app.http.server.configuration.port
+        albumCount = ds.getAlbumCount()
+        singleCount = ds.getSingleCount()
     }
 }

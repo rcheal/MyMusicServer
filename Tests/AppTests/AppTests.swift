@@ -675,4 +675,207 @@ final class AppTests: XCTestCase {
         }
     }
 
+    func populateDB(_ app: Application) throws {
+        let album = createLisztAlbum()
+        var newAlbum = album
+        newAlbum.id = UUID().uuidString
+        newAlbum.title = "Second Album"
+
+        let albumBuf = ByteBuffer(data: album.json ?? Data())
+        let newAlbumBuf = ByteBuffer(data: newAlbum.json ?? Data())
+        
+        try app.test(.POST, "albums/\(album.id)", headers: HTTPHeaders([("Content-Type", "application/json")]), body: albumBuf, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+
+        try app.test(.POST, "albums/\(newAlbum.id)", headers: HTTPHeaders([("Content-Type", "application/json")]), body: newAlbumBuf, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+
+        let single = createLisztSingle()
+        var newSingle = single
+        newSingle.id = UUID().uuidString
+        newSingle.title = "Second Single"
+        
+        let singleBuf = ByteBuffer(data: single.json ?? Data())
+        let newSingleBuf = ByteBuffer(data: newSingle.json ?? Data())
+        
+        try app.test(.POST, "singles/\(single.id)", headers: HTTPHeaders([("Content-Type", "application/json")]), body: singleBuf, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+        
+        try app.test(.POST, "singles/\(newSingle.id)", headers: HTTPHeaders([("Content-Type", "application/json")]), body: newSingleBuf, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+        
+    }
+    
+    func testAlbumList() throws {
+        let app = Application(.testing)
+        defer { app.shutdown() }
+        try configure(app)
+        
+        try populateDB(app)
+        
+        try app.test(.GET, "albums") { res in
+            let result = try res.content.decode(AlbumList.self)
+            XCTAssertEqual(result.albums.count, 2)
+            for index in result.albums.indices {
+                let album = result.albums[index]
+                if index == 0 {
+                    XCTAssertEqual(album.title,"Liszt Piano Concertos 1 & 2")
+                } else {
+                    XCTAssertEqual(album.title,"Second Album")
+                }
+                XCTAssertEqual(album.artist, "Krystian Zimmerman")
+                XCTAssertEqual(album.composer, "Franz Liszt (1811-1886)")
+                XCTAssertEqual(album.genre, "Classical")
+            }
+        }
+    }
+    
+    func testSingleList() throws {
+        let app = Application(.testing)
+        defer { app.shutdown() }
+        try configure(app)
+        
+        try populateDB(app)
+        
+        try app.test(.GET, "singles") { res in
+            let result = try res.content.decode(SingleList.self)
+            XCTAssertEqual(result.singles.count, 2)
+            for index in result.singles.indices {
+                let single = result.singles[index]
+                if index == 0 {
+                    XCTAssertEqual(single.title, "Totentanz (Danse macabre)")
+                } else {
+                    XCTAssertEqual(single.title, "Second Single")
+                }
+                XCTAssertEqual(single.genre, "Classical")
+                XCTAssertEqual(single.composer, "Franz Liszt (1811-1886)")
+                XCTAssertEqual(single.artist, "Krystian Zimmerman")
+                XCTAssertNil(single.sortTitle)
+                XCTAssertNil(single.sortArtist)
+                XCTAssertNil(single.sortComposer)
+            }
+        }
+    }
+    
+    func testVerifyAlbumTransactions() throws {
+        let album = createMixedAlbum()
+        var newAlbum = album
+        newAlbum.title = "New title"
+
+        let app = Application(.testing)
+        defer { app.shutdown() }
+        try configure(app)
+        
+        let albumBuf = ByteBuffer(data: album.json ?? Data())
+        let newAlbumBuf = ByteBuffer(data: newAlbum.json ?? Data())
+        
+        try app.test(.POST, "albums/\(album.id)", headers: HTTPHeaders([("Content-Type", "application/json")]), body: albumBuf, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+        
+        try app.test(.PUT, "albums/\(album.id)", headers: HTTPHeaders([("Content-Type", "application/json")]), body: newAlbumBuf, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+        
+        try app.test(.DELETE, "albums/\(album.id)", afterResponse:  { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+        
+        try app.test(.GET, "transactions", beforeRequest: { req in
+            try req.query.encode(["startTime" : "0"])
+        }, afterResponse:  { res in
+            let result = try res.content.decode(TransactionList.self)
+            XCTAssertEqual(result.transactions.count, 3)
+            
+            for index in result.transactions.indices {
+                let transaction = result.transactions[index]
+                switch index {
+                case 0:
+                    XCTAssertEqual(transaction.method, "POST")
+                    XCTAssertEqual(transaction.entity, "album")
+                    XCTAssertEqual(transaction.id, album.id)
+//                    print(transaction.time)
+                case 1:
+                    XCTAssertEqual(transaction.method, "PUT")
+                    XCTAssertEqual(transaction.entity, "album")
+                    XCTAssertEqual(transaction.id, album.id)
+//                    print(transaction.time)
+                case 2:
+                    XCTAssertEqual(transaction.method, "DELETE")
+                    XCTAssertEqual(transaction.entity, "album")
+                    XCTAssertEqual(transaction.id, album.id)
+//                    print(transaction.time)
+                default:
+                    break
+                }
+
+            }
+            
+        })
+
+    }
+
+    func testVerifySingleTransactions() throws {
+        let single = createLisztSingle()
+        var newSingle = single
+        newSingle.title = "New title"
+
+        let app = Application(.testing)
+        defer { app.shutdown() }
+        try configure(app)
+        
+        let singleBuf = ByteBuffer(data: single.json ?? Data())
+        let nwSingleBuf = ByteBuffer(data: newSingle.json ?? Data())
+        
+        try app.test(.POST, "singles/\(single.id)", headers: HTTPHeaders([("Content-Type", "application/json")]), body: singleBuf, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+        
+        try app.test(.PUT, "singles/\(single.id)", headers: HTTPHeaders([("Content-Type", "application/json")]), body: nwSingleBuf, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+        
+        try app.test(.DELETE, "singles/\(single.id)", afterResponse:  { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+        
+        try app.test(.GET, "transactions", beforeRequest: { req in
+            try req.query.encode(["startTime" : "0"])
+        }, afterResponse:  { res in
+            let result = try res.content.decode(TransactionList.self)
+            XCTAssertEqual(result.transactions.count, 3)
+            
+            for index in result.transactions.indices {
+                let transaction = result.transactions[index]
+                switch index {
+                case 0:
+                    XCTAssertEqual(transaction.method, "POST")
+                    XCTAssertEqual(transaction.entity, "single")
+                    XCTAssertEqual(transaction.id, single.id)
+//                    print(transaction.time)
+                case 1:
+                    XCTAssertEqual(transaction.method, "PUT")
+                    XCTAssertEqual(transaction.entity, "single")
+                    XCTAssertEqual(transaction.id, single.id)
+//                    print(transaction.time)
+                case 2:
+                    XCTAssertEqual(transaction.method, "DELETE")
+                    XCTAssertEqual(transaction.entity, "single")
+                    XCTAssertEqual(transaction.id, single.id)
+//                    print(transaction.time)
+                default:
+                    break
+                }
+
+            }
+            
+        })
+
+    }
+
 }
+
