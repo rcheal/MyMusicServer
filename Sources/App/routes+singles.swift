@@ -13,8 +13,8 @@ func routesingles(_ singles: RoutesBuilder) throws {
     let ds = Datastore.shared()
 
     // MARK: GET /singles
-    singles.get { req -> SingleList in
-        return SingleList(singles: try ds.getSingleList())
+    singles.get { req -> Singles in
+        return Singles(singles: try ds.getSingles())
     }
     
     try singles.group(":id") { single in

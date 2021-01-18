@@ -13,8 +13,8 @@ func routealbums(_ albums: RoutesBuilder) throws {
     let ds = Datastore.shared()
 
     // MARK: GET /albums
-    albums.get { req -> AlbumList in
-        return AlbumList(albums: try ds.getAlbumList())
+    albums.get { req -> Albums in
+        return Albums(albums: try ds.getAlbums())
     }
     
     try albums.group(":id") { album in

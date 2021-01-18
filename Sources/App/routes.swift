@@ -18,24 +18,24 @@ func routes(_ app: Application) throws {
         return ServerStatus(app)
     }
 
-    // MARK: DELETE /_removeAll?user=:user&password=:password
-    app.delete("removeAll") { req -> HTTPResponseStatus in
-        let userQuery = try req.query.decode(UserPassword.self)
-        if let user = userQuery.user,
-           let password = userQuery.password {
-            try ds.removeAll(user: user, password: password)
+//    // MARK : DELETE /_removeAll?user=:user&password=:password
+//    app.delete("removeAll") { req -> HTTPResponseStatus in
+//        let userQuery = try req.query.decode(UserPassword.self)
+//        if let user = userQuery.user,
+//           let password = userQuery.password {
+//            try ds.removeAll(user: user, password: password)
+//
+//        } else {
+//            throw Abort(.unauthorized)
+//        }
+//        return HTTPResponseStatus.ok
+//    }
 
-        } else {
-            throw Abort(.unauthorized)
-        }
-        return HTTPResponseStatus.ok
-    }
-    
     // MARK: GET /transactions?startTime=:time
-    app.get("transactions") { req -> TransactionList in
+    app.get("transactions") { req -> Transactions in
         let query = try req.query.decode(StartTime.self)
         if let startTime = query.startTime {
-            return TransactionList(transactions: try ds.getTransactionList(since: startTime))
+            return Transactions(transactions: try ds.getTransactions(since: startTime))
         }
         throw Abort(.badRequest)
     }

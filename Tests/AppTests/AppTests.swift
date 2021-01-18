@@ -196,9 +196,9 @@ final class AppTests: XCTestCase {
             let serverStatus = try res.content.decode(ServerStatus.self)
             
             XCTAssertEqual(serverStatus.version,myMusicServerVersion)
-            XCTAssertEqual(serverStatus.serverName, "Robert’s iMac")
-            XCTAssertEqual(serverStatus.ipAddress, "127.0.0.1")
-            XCTAssertEqual(serverStatus.port, 8080)
+            XCTAssertEqual(serverStatus.name, "Robert’s iMac")
+            XCTAssertEqual(serverStatus.url.host, "192.168.1.20")
+            XCTAssertEqual(serverStatus.url.port, 8180)
             XCTAssertEqual(serverStatus.albumCount, 0)
             XCTAssertEqual(serverStatus.singleCount, 0)
             let components  = serverStatus.upTime.components(separatedBy: ":")
@@ -718,7 +718,7 @@ final class AppTests: XCTestCase {
         try populateDB(app)
         
         try app.test(.GET, "albums") { res in
-            let result = try res.content.decode(AlbumList.self)
+            let result = try res.content.decode(Albums.self)
             XCTAssertEqual(result.albums.count, 2)
             for index in result.albums.indices {
                 let album = result.albums[index]
@@ -742,7 +742,7 @@ final class AppTests: XCTestCase {
         try populateDB(app)
         
         try app.test(.GET, "singles") { res in
-            let result = try res.content.decode(SingleList.self)
+            let result = try res.content.decode(Singles.self)
             XCTAssertEqual(result.singles.count, 2)
             for index in result.singles.indices {
                 let single = result.singles[index]
@@ -788,7 +788,7 @@ final class AppTests: XCTestCase {
         try app.test(.GET, "transactions", beforeRequest: { req in
             try req.query.encode(["startTime" : "0"])
         }, afterResponse:  { res in
-            let result = try res.content.decode(TransactionList.self)
+            let result = try res.content.decode(Transactions.self)
             XCTAssertEqual(result.transactions.count, 3)
             
             for index in result.transactions.indices {
@@ -846,7 +846,7 @@ final class AppTests: XCTestCase {
         try app.test(.GET, "transactions", beforeRequest: { req in
             try req.query.encode(["startTime" : "0"])
         }, afterResponse:  { res in
-            let result = try res.content.decode(TransactionList.self)
+            let result = try res.content.decode(Transactions.self)
             XCTAssertEqual(result.transactions.count, 3)
             
             for index in result.transactions.indices {
@@ -876,6 +876,126 @@ final class AppTests: XCTestCase {
         })
 
     }
+
+    func testGetPlaylistNotFound() throws {
+        let playlist = Playlist("New Playlist")
+        
+        let app = Application(.testing)
+        defer { app.shutdown() }
+        try configure(app)
+
+        try app.test(.GET, "playlists/\(playlist.id)", afterResponse:  { res in
+            XCTAssertEqual(res.status, .notFound)
+
+        })
+    }
+
+    func testPutPlaylistNotFound() throws {
+        let playlist = Playlist("Playlist1")
+
+        let app = Application(.testing)
+        defer { app.shutdown() }
+        try configure(app)
+
+        let playlistBuf = ByteBuffer(data: playlist.json ?? Data())
+        
+        try app.test(.PUT, "playlists/\(playlist.id)", headers: HTTPHeaders([("Content-Type", "application/json")]), body: playlistBuf, afterResponse: { res in
+            XCTAssertEqual(res.status, .notFound)
+        })
+        
+        try app.test(.GET, "playlists/\(playlist.id)", afterResponse:  { res in
+            XCTAssertEqual(res.status, .notFound)
+
+        })
+
+    }
+    
+    func testPostPutPlaylist() throws {
+        let playlist = Playlist("Playlist1", shared: true)
+        var newPlaylist = playlist
+        newPlaylist.title = "New title"
+        
+        let app = Application(.testing)
+        defer { app.shutdown() }
+        try configure(app)
+        
+        let playlistBuf = ByteBuffer(data: playlist.json ?? Data())
+        let newPlaylistBuf = ByteBuffer(data: newPlaylist.json ?? Data())
+        
+        try app.test(.POST, "playlists/\(playlist.id)", headers: HTTPHeaders([("Content-Type", "application/json")]), body: playlistBuf, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+        
+        try app.test(.PUT, "playlists/\(playlist.id)", headers: HTTPHeaders([("Content-Type", "application/json")]), body: newPlaylistBuf, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+        
+        try app.test(.GET, "playlists/\(playlist.id)", afterResponse:  { res in
+            let newPlaylist = try res.content.decode(Playlist.self)
+            XCTAssertEqual(playlist.id, newPlaylist.id)
+            XCTAssertEqual(newPlaylist.title, "New title")
+            
+        })
+    }
+    
+    func testPostGetPlaylist() throws {
+        var playlist = Playlist("Playlist1", shared: true)
+        playlist.user = "Bob"
+
+        let app = Application(.testing)
+        defer { app.shutdown() }
+        try configure(app)
+        
+        let playlistBuf = ByteBuffer(data: playlist.json ?? Data())
+        
+        try app.test(.POST, "playlists/\(playlist.id)", headers: HTTPHeaders([("Content-Type", "application/json")]), body: playlistBuf, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+        
+        try app.test(.GET, "playlists/\(playlist.id)", afterResponse:  { res in
+            let newPlaylist = try res.content.decode(Playlist.self)
+            XCTAssertEqual(playlist.id, newPlaylist.id)
+            XCTAssertEqual(playlist.title, newPlaylist.title)
+            XCTAssertEqual(playlist.user, newPlaylist.user)
+            
+        })
+    }
+
+    func testPostDeletePlaylist() throws {
+        let playlist = Playlist("Blues guitar", shared: false)
+
+        let app = Application(.testing)
+        defer { app.shutdown() }
+        try configure(app)
+        
+        let playlistBuf = ByteBuffer(data: playlist.json ?? Data())
+        
+        try app.test(.POST, "playlists/\(playlist.id)", headers: HTTPHeaders([("Content-Type", "application/json")]), body: playlistBuf, afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+
+        try app.test(.DELETE, "playlists/\(playlist.id)", afterResponse: { res in
+            XCTAssertEqual(res.status, .ok)
+        })
+        
+        try app.test(.GET, "playlists/\(playlist.id)", afterResponse:  { res in
+            XCTAssertEqual(res.status, .notFound)
+        })
+    }
+    
+    func testDeletePlaylistNotFound() throws {
+        let playlist = Playlist("Playlist1")
+
+        let app = Application(.testing)
+        defer { app.shutdown() }
+        try configure(app)
+        
+        try app.test(.DELETE, "playlists/\(playlist.id)", afterResponse: { res in
+            XCTAssertEqual(res.status, .notFound)
+        })
+        
+    }
+    
 
 }
 

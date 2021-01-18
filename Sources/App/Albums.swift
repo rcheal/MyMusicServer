@@ -1,5 +1,5 @@
 //
-//  AlbumList.swift
+//  Albums.swift
 //  
 //
 //  Created by Robert Cheal on 1/15/21.
@@ -9,11 +9,11 @@ import Foundation
 import Vapor
 import MusicMetadata
 
-struct AlbumList {
-    var albums: [AlbumListItem]
+struct Albums {
+    var albums: [AlbumSummary]
 }
 
-extension AlbumList: Codable, Content {
+extension Albums: Codable, Content {
     
     public enum CodingKeys: String, CodingKey {
         case albums

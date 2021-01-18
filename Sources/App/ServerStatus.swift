@@ -7,7 +7,7 @@
 
 import Vapor
 
-var myMusicServerVersion = "0.1.1" // You must manually sync this with the git tag
+var myMusicServerVersion = "1.0.0" // You must manually sync this with the git tag
 
 class ServerState {
     static var shared = ServerState()
@@ -35,10 +35,14 @@ let serverState = ServerState.shared
 
 struct ServerStatus: Content {
 
+    struct Address: Codable {
+        var host: String
+        var port: Int
+    }
+    
     var version = myMusicServerVersion
-    var serverName: String
-    var ipAddress: String
-    var port: Int
+    var name: String
+    var url: Address
     var albumCount: Int
     var singleCount: Int
     var playlistCount: Int = 0
@@ -48,9 +52,9 @@ struct ServerStatus: Content {
         let ds = Datastore.shared()
         
         upTime = serverState.upTime
-        serverName = app.http.server.configuration.serverName ?? Host.current().localizedName ?? "Unknown"
-        ipAddress = app.http.server.configuration.hostname
-        port = app.http.server.configuration.port
+        
+        name = app.http.server.configuration.serverName ?? Host.current().localizedName ?? "Unknown"
+        url = Address(host: app.http.server.configuration.hostname, port: app.http.server.configuration.port)
         albumCount = ds.getAlbumCount()
         singleCount = ds.getSingleCount()
     }

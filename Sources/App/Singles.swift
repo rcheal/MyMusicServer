@@ -1,5 +1,5 @@
 //
-//  SingleList.swift
+//  Singles.swift
 //  
 //
 //  Created by Robert Cheal on 1/15/21.
@@ -8,11 +8,11 @@
 import Vapor
 import MusicMetadata
 
-struct SingleList {
-    var singles: [SingleListItem]
+struct Singles {
+    var singles: [SingleSummary]
 }
 
-extension SingleList: Codable, Content {
+extension Singles: Codable, Content {
     
     public enum CodingKeys: String, CodingKey {
         case singles

@@ -16,6 +16,14 @@ extension Single: Content {
     
 }
 
+extension Transaction: Content {
+    
+}
+
+extension Playlist: Content {
+    
+}
+
 struct FileContent: Content {
     var name: String
     var data: Data
@@ -23,6 +31,10 @@ struct FileContent: Content {
 
 struct StartTime: Content {
     var startTime: String?
+}
+
+struct User: Content {
+    var user: String?
 }
 
 struct UserPassword: Content {

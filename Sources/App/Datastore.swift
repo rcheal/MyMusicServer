@@ -76,7 +76,8 @@ class Datastore {
             
             try db.create(table: "playlist") { t in
                 t.column("id", .text).primaryKey()
-                t.column("title", .text)
+                t.column("user", .text)
+                t.column("shared", .boolean)
                 t.column("json", .blob)
             }
 
@@ -94,22 +95,22 @@ class Datastore {
 
     // MARK: Server functions
     
-    func removeAll(user: String, password: String) throws {
-        func checkUserPassword(user: String, password: String) -> Bool {
-            if user == "bob" && password == "dulcimer" {
-                return true
-            }
-            return false
-        }
-        if checkUserPassword(user: user, password: password) {
-            
-        } else {
-            throw Abort(.unauthorized)
-        }
-
-    }
-    
-    func getTransactionList(since timestamp: String) throws -> [Transaction] {
+//    func removeAll(user: String, password: String) throws {
+//        func checkUserPassword(user: String, password: String) -> Bool {
+//            if user == "bob" && password == "dulcimer" {
+//                return true
+//            }
+//            return false
+//        }
+//        if checkUserPassword(user: user, password: password) {
+//            
+//        } else {
+//            throw Abort(.unauthorized)
+//        }
+//
+//    }
+//    
+    func getTransactions(since timestamp: String) throws -> [Transaction] {
         return try dbQueue.read { db in
             try Transaction.fetchAll(db, sql: "SELECT * FROM 'transaction' WHERE time >= ?",
                                      arguments: [timestamp])
@@ -118,14 +119,14 @@ class Datastore {
     
     // MARK: Album functions
     
-    func getAlbumList() throws -> [AlbumListItem] {
-        var albums: [AlbumListItem] = []
+    func getAlbums() throws -> [AlbumSummary] {
+        var albums: [AlbumSummary] = []
         try dbQueue.read { db in
             let rows = try Row.fetchAll(db, sql: "SELECT json FROM album")
             for row in rows {
                 if let album = Album.decodeFrom(json: row["json"]) {
-                    let albumListItem = AlbumListItem(album)
-                    albums.append(albumListItem)
+                    let albumSummary = AlbumSummary(album)
+                    albums.append(albumSummary)
                 }
             }
         }
@@ -328,13 +329,13 @@ class Datastore {
     
     // MARK: Single functions
 
-    func getSingleList() throws -> [SingleListItem] {
-        var singles: [SingleListItem] = []
+    func getSingles() throws -> [SingleSummary] {
+        var singles: [SingleSummary] = []
         try dbQueue.read { db in
             let rows = try Row.fetchAll(db, sql: "SELECT json FROM single")
             for row in rows {
                 if let single = Single.decodeFrom(json: row["json"]) {
-                    var singleListItem = SingleListItem(single)
+                    var singleListItem = SingleSummary(single)
                     singleListItem.sortTitle = nil
                     singleListItem.sortArtist = nil
                     singleListItem.sortComposer = nil
@@ -402,7 +403,7 @@ class Datastore {
             if changes < 1 {
                 throw Abort(.notFound)
             }
-         }
+        }
     }
 
     func deleteSingle(_ id: String) throws {
@@ -514,6 +515,102 @@ class Datastore {
         }
     }
     
+    // MARK: Playlist functions
+    
+    func getPlaylists(user: String?) throws -> [PlaylistSummary] {
+        var playlists: [PlaylistSummary] = []
+        try dbQueue.read { db in
+            let rows = try Row.fetchAll(db, sql: "SELECT json FROM playlists WHERE user = ? .OR. shared = ?",
+                                        arguments: [user,true])
+            for row in rows {
+                if let playlist = Playlist.decodeFrom(json: row["json"]) {
+                    var playlistSummary = PlaylistSummary(playlist)
+                    playlistSummary.sortTitle = nil
+                    playlists.append(playlistSummary)
+                }
+            }
+        }
+        return []
+    }
+    
+    func getPlaylistCount() -> Int {
+        var count = -1
+        do {
+            try dbQueue.read { db in
+                count = try Playlist.fetchCount(db)
+            }
+        } catch {
+        }
+        return count
+    }
+    
+    func getPlaylist(_ id: String) throws -> Playlist?  {
+        var playlist: Playlist?
+        try dbQueue.read { db in
+            if let row = try Row.fetchOne(db, sql: "SELECT json FROM playlist WHERE id = ?", arguments: [id]) {
 
+                playlist = Playlist.decodeFrom(json: row["json"])
+            }
+        }
+        return playlist
+    }
+    
+    func postPlaylist(_ playlist: Playlist) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: """
+                    INSERT INTO playlist (id, user, shared, json) VALUES (?, ?, ?, ?)
+                """,
+                arguments: [playlist.id, playlist.user, playlist.shared, playlist.json])
 
+            let transaction = Transaction(method: "POST", entity: "playlist", id: playlist.id)
+            try transaction.insert(db)
+            
+        }
+
+    }
+    
+    func putPlaylist(_ playlist: Playlist) throws {
+        try dbQueue.write { db in
+            var changes = 0
+            do {
+                try db.execute(
+                    sql: """
+                        UPDATE playlist SET user = ?, shared = ?, json = ? WHERE id = ?
+                    """,
+                    arguments: [playlist.user, playlist.shared, playlist.json, playlist.id])
+                
+                changes = db.changesCount
+
+                let transaction = Transaction(method: "PUT", entity: "playlist", id: playlist.id)
+                try transaction.insert(db)
+                
+            } catch {
+                throw Abort(.internalServerError)
+            }
+            if changes < 1 {
+                throw Abort(.notFound)
+            }
+        }
+    }
+    
+    func deletePlaylist(_ id: String) throws {
+        let deleted = try dbQueue.write { db -> Bool in
+            var result = false
+            do {
+                result = try Playlist.deleteOne(db, key: id)
+                
+                let transaction = Transaction(method: "DELETE", entity: "playlist", id: id)
+                try transaction.insert(db)
+                
+            } catch is PersistenceError {
+                throw Abort(.notFound)
+            }
+            return result
+        }
+        if !deleted {
+            throw Abort(.notFound)
+        }
+
+    }
 }
