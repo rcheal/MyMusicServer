@@ -15,13 +15,9 @@ class ServerState {
     
     var startDate: Date
     
-    var upTime: String {
+    var upTime: Double {
         get {
-            let elapsedSeconds = Date().timeIntervalSince(startDate)
-            let hours = Int(elapsedSeconds) / 3600
-            let minutes = (Int(elapsedSeconds) % 3600) / 60
-            let seconds = Int(elapsedSeconds) % 60
-            return String(hours) + ":" + String(minutes) + ":" + String(seconds)
+            Date().timeIntervalSince(startDate)
         }
     }
 
@@ -45,8 +41,8 @@ struct ServerStatus: Content {
     var url: Address
     var albumCount: Int
     var singleCount: Int
-    var playlistCount: Int = 0
-    var upTime: String
+    var playlistCount: Int
+    var upTime: Double
     
     init(_ app: Application) {
         let ds = Datastore.shared()
@@ -57,5 +53,6 @@ struct ServerStatus: Content {
         url = Address(host: app.http.server.configuration.hostname, port: app.http.server.configuration.port)
         albumCount = ds.getAlbumCount()
         singleCount = ds.getSingleCount()
+        playlistCount = ds.getPlaylistCount()
     }
 }

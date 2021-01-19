@@ -201,13 +201,10 @@ final class AppTests: XCTestCase {
             XCTAssertEqual(serverStatus.url.port, 8180)
             XCTAssertEqual(serverStatus.albumCount, 0)
             XCTAssertEqual(serverStatus.singleCount, 0)
-            let components  = serverStatus.upTime.components(separatedBy: ":")
-            XCTAssertEqual(components.count, 3)
-            let hours = Int(components[0]) ?? 0
-            let minutes = Int(components[1]) ?? 0
-            let seconds = Int(components[2]) ?? 0
-            let uptimeInSeconds = (hours * 3600) + (minutes * 60) + seconds
-            XCTAssertLessThan(uptimeInSeconds, 5)
+            XCTAssertEqual(serverStatus.playlistCount, 0)
+
+            let uptimeInSeconds = serverStatus.upTime
+            XCTAssertLessThan(uptimeInSeconds, 5.0)
             
         })
     }

@@ -95,21 +95,6 @@ class Datastore {
 
     // MARK: Server functions
     
-//    func removeAll(user: String, password: String) throws {
-//        func checkUserPassword(user: String, password: String) -> Bool {
-//            if user == "bob" && password == "dulcimer" {
-//                return true
-//            }
-//            return false
-//        }
-//        if checkUserPassword(user: user, password: password) {
-//            
-//        } else {
-//            throw Abort(.unauthorized)
-//        }
-//
-//    }
-//    
     func getTransactions(since timestamp: String) throws -> [Transaction] {
         return try dbQueue.read { db in
             try Transaction.fetchAll(db, sql: "SELECT * FROM 'transaction' WHERE time >= ?",
