@@ -14,7 +14,13 @@ func routealbums(_ albums: RoutesBuilder) throws {
 
     // MARK: GET /albums
     albums.get { req -> Albums in
-        return Albums(albums: try ds.getAlbums())
+        let params = try req.query.decode(ListParams.self)
+        let limit = params.limit ?? 10
+        let offset = params.offset ?? 0
+        let albums = try ds.getAlbums(limit: limit, offset: offset, fields: params.fields)
+        let albumCount = ds.getAlbumCount()
+        let metadata = Metadata(totalCount: albumCount, limit: limit, offset: offset)
+        return Albums(albums: albums, _metadata: metadata)
     }
     
     try albums.group(":id") { album in
@@ -31,6 +37,18 @@ func routealbum(_ album: RoutesBuilder) throws {
         try routealbumfiles(file)
     }
         
+    
+    // MARK: HEAD /albums/:id
+    album.on(.HEAD, []) { req -> HTTPResponseStatus in
+        if let id = req.parameters.get("id") {
+            if try ds.albumExists(id) {
+                return(.ok)
+            } else {
+                return(.notFound)
+            }
+        }
+        throw Abort(.notFound)
+    }
     
     // MARK: GET /albums/:id
     album.get { req -> Album in

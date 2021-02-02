@@ -8,6 +8,7 @@
 import Vapor
 
 var myMusicServerVersion = "1.0.0" // You must manually sync this with the git tag
+var myMusicApiVersions = "v1"  // comma separated list of supported api versions
 
 class ServerState {
     static var shared = ServerState()
@@ -37,6 +38,7 @@ struct ServerStatus: Content {
     }
     
     var version = myMusicServerVersion
+    var apiVersions = myMusicApiVersions
     var name: String
     var url: Address
     var albumCount: Int

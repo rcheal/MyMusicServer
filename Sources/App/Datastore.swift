@@ -104,14 +104,20 @@ class Datastore {
     
     // MARK: Album functions
     
-    func getAlbums() throws -> [AlbumSummary] {
-        var albums: [AlbumSummary] = []
+    func getAlbums(limit: Int, offset: Int, fields: String?) throws -> [Album] {
+        var albums: [Album] = []
         try dbQueue.read { db in
-            let rows = try Row.fetchAll(db, sql: "SELECT json FROM album")
+            let rows = try Row.fetchAll(db, sql: "SELECT json FROM album LIMIT ? OFFSET ?",
+                                        arguments: [limit, offset])
             for row in rows {
-                if let album = Album.decodeFrom(json: row["json"]) {
-                    let albumSummary = AlbumSummary(album)
-                    albums.append(albumSummary)
+                if var album = Album.decodeFrom(json: row["json"]) {
+                    if let fields = fields {
+                        let fullAlbum = album
+                        album = Album(title: fullAlbum.title)
+                        album.id = fullAlbum.id
+                        album.addFields(fields, from: fullAlbum)
+                    }
+                    albums.append(album)
                 }
             }
         }
@@ -129,6 +135,16 @@ class Datastore {
         return count
     }
 
+    func albumExists(_ id: String) throws -> Bool {
+        var exists = false
+        try dbQueue.read { db in
+            if let row = try Row.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 from album WHERE id = ?)", arguments: [id]) {
+                exists = (row["EXISTS"] == 1)
+            }
+        }
+        return exists
+    }
+    
     /**
      Retrieves an album from the database
      
@@ -314,17 +330,19 @@ class Datastore {
     
     // MARK: Single functions
 
-    func getSingles() throws -> [SingleSummary] {
-        var singles: [SingleSummary] = []
+    func getSingles(limit: Int, offset: Int, fields: String?) throws -> [Single] {
+        var singles: [Single] = []
         try dbQueue.read { db in
-            let rows = try Row.fetchAll(db, sql: "SELECT json FROM single")
+            let rows = try Row.fetchAll(db, sql: "SELECT json FROM single LIMIT ? OFFSET ?",
+                                        arguments: [limit, offset])
             for row in rows {
-                if let single = Single.decodeFrom(json: row["json"]) {
-                    var singleListItem = SingleSummary(single)
-                    singleListItem.sortTitle = nil
-                    singleListItem.sortArtist = nil
-                    singleListItem.sortComposer = nil
-                    singles.append(singleListItem)
+                if var single = Single.decodeFrom(json: row["json"]) {
+                    if let fields = fields {
+                        let fullSingle = single
+                        single = Single(title: fullSingle.title, filename: "", track: fullSingle.track)
+                        single.addFields(fields, from: fullSingle)
+                    }
+                   singles.append(single)
                 }
             }
         }
@@ -342,6 +360,16 @@ class Datastore {
         return count
     }
 
+    func singleExists(_ id: String) throws -> Bool {
+        var exists = false
+        try dbQueue.read { db in
+            if let row = try Row.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 from single WHERE id = ?)", arguments: [id]) {
+                exists = (row["EXISTS"] == 1)
+            }
+        }
+        return exists
+    }
+    
     func getSingle(_ id: String) throws  -> Single? {
         var single: Single?
         try dbQueue.read { db in
@@ -399,7 +427,7 @@ class Datastore {
 
                 let single = Single.decodeFrom(json: row["json"])
                 directory = single?.directory
-                filename = single?.audiofileRef
+                filename = single?.filename
             }
         }
         let deleted = try dbQueue.write { db -> Bool in
@@ -505,7 +533,7 @@ class Datastore {
     func getPlaylists(user: String?) throws -> [PlaylistSummary] {
         var playlists: [PlaylistSummary] = []
         try dbQueue.read { db in
-            let rows = try Row.fetchAll(db, sql: "SELECT json FROM playlists WHERE user = ? .OR. shared = ?",
+            let rows = try Row.fetchAll(db, sql: "SELECT json FROM playlist WHERE user = ? OR shared = ?",
                                         arguments: [user,true])
             for row in rows {
                 if let playlist = Playlist.decodeFrom(json: row["json"]) {
@@ -527,6 +555,16 @@ class Datastore {
         } catch {
         }
         return count
+    }
+    
+    func playlistExists(_ id: String) throws -> Bool {
+        var exists = false
+        try dbQueue.read { db in
+            if let row = try Row.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 from playlist WHERE id = ?)", arguments: [id]) {
+                exists = (row["EXISTS"] == 1)
+            }
+        }
+        return exists
     }
     
     func getPlaylist(_ id: String) throws -> Playlist?  {

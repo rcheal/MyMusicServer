@@ -14,7 +14,13 @@ func routesingles(_ singles: RoutesBuilder) throws {
 
     // MARK: GET /singles
     singles.get { req -> Singles in
-        return Singles(singles: try ds.getSingles())
+        let params = try req.query.decode(ListParams.self)
+        let limit = params.limit ?? 10
+        let offset = params.offset ?? 0
+        let singles = try ds.getSingles(limit: limit, offset: offset, fields: params.fields)
+        let count = ds.getSingleCount()
+        let metadata = Metadata(totalCount: count, limit: limit, offset: offset)
+        return Singles(singles: singles, _metadata: metadata)
     }
     
     try singles.group(":id") { single in
@@ -30,6 +36,18 @@ func routesingle(_ single: RoutesBuilder) throws {
         
         try routesinglefiles(file)
         
+    }
+    
+    // MARK: HEAD /singles/:id
+    single.on(.HEAD, []) { req -> HTTPResponseStatus in
+        if let id = req.parameters.get("id") {
+            if try ds.singleExists(id) {
+                return(.ok)
+            } else {
+                return(.notFound)
+            }
+        }
+        throw Abort(.notFound)
     }
     
     // MARK: GET /singles/:id

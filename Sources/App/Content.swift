@@ -33,12 +33,14 @@ struct StartTime: Content {
     var startTime: String?
 }
 
-struct User: Content {
-    var user: String?
-}
-
-struct UserPassword: Content {
+struct UserParams: Content {
     var user: String?
     var password: String?
 }
 
+
+struct ListParams: Content {
+    var limit: Int?
+    var offset: Int?
+    var fields: String?
+}

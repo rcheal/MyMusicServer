@@ -10,52 +10,62 @@ import MusicMetadata
 
 func routes(_ app: Application) throws {
     let _ = ServerState.shared
-    let ds = Datastore.shared()
 
     // MARK: *** Server ***
+
     // MARK: GET /
     app.get { req -> ServerStatus in
         return ServerStatus(app)
     }
-
-//    // MARK : DELETE /_removeAll?user=:user&password=:password
-//    app.delete("removeAll") { req -> HTTPResponseStatus in
-//        let userQuery = try req.query.decode(UserPassword.self)
-//        if let user = userQuery.user,
-//           let password = userQuery.password {
-//            try ds.removeAll(user: user, password: password)
+    
+    // MARK GET /v1
+    try app.group("v1") { version in
+        try routeVersion1(app, version)
+    }
+    
+    // MARK GET /v2
+//    app.group("v2") { version in
 //
-//        } else {
-//            throw Abort(.unauthorized)
+//        version.get { req -> Int in
+//            throw Abort(.notImplemented)
+//
 //        }
-//        return HTTPResponseStatus.ok
 //    }
+}
 
+func routeVersion1(_ app: Application, _ ver: RoutesBuilder) throws {
+    let ds = Datastore.shared()
+
+    // MARK: GET /v1
+    ver.get { req -> ServerStatus in
+        return ServerStatus(app)
+    }
+    
     // MARK: GET /transactions?startTime=:time
-    app.get("transactions") { req -> Transactions in
+    ver.get("transactions") { req -> Transactions in
         let query = try req.query.decode(StartTime.self)
         if let startTime = query.startTime {
             return Transactions(transactions: try ds.getTransactions(since: startTime))
         }
         throw Abort(.badRequest)
     }
-
+    
     // MARK: *** Albums ***
-    try app.group("albums") { albums in
+    try ver.group("albums") { albums in
         
         try routealbums(albums)
         
     }
 
     // MARK: *** Singles ***
-    try app.group("singles") { singles in
+    try ver.group("singles") { singles in
         
         try routesingles(singles)
         
     }
 
     // MARK: *** Playlists ***
-    try app.group("playlists") { playlists in
+    try ver.group("playlists") { playlists in
         
         try routeplaylists(playlists)
     }

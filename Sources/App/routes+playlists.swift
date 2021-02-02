@@ -13,7 +13,7 @@ func routeplaylists(_ playlists: RoutesBuilder) throws {
     
     // MARK: GET /playlists
     playlists.get { req -> Playlists in
-        let query = try req.query.decode(User.self)
+        let query = try req.query.decode(UserParams.self)
         let user = query.user
         let ds = Datastore.shared()
         return Playlists(playlists: try ds.getPlaylists(user: user))
@@ -30,6 +30,18 @@ func routeplaylists(_ playlists: RoutesBuilder) throws {
 func routeplaylist(_ playlist: RoutesBuilder) throws {
     let ds = Datastore.shared()
 
+    // MARK: HEAD /playlists/:id
+    playlist.on(.HEAD, []) { req -> HTTPResponseStatus in
+        if let id = req.parameters.get("id") {
+            if try ds.playlistExists(id) {
+                return(.ok)
+            } else {
+                return(.notFound)
+            }
+        }
+        throw Abort(.notFound)
+    }
+    
     // MARK: GET /playlists/:id
     playlist.get { req -> Playlist in
         if let id = req.parameters.get("id") {
