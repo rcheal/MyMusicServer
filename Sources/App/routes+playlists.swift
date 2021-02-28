@@ -12,11 +12,18 @@ import MusicMetadata
 func routeplaylists(_ playlists: RoutesBuilder) throws {
     
     // MARK: GET /playlists
-    playlists.get { req -> Playlists in
-        let query = try req.query.decode(UserParams.self)
-        let user = query.user
+    playlists.get { req -> APIPlaylists in
         let ds = Datastore.shared()
-        return Playlists(playlists: try ds.getPlaylists(user: user))
+        let auth = try req.query.decode(UserParams.self)
+        let user = auth.user
+        let query = try req.query.decode(ListParams.self)
+        let fields = query.fields
+        let offset = query.offset ?? 0
+        let limit = query.limit ?? 10
+        let playlists = try ds.getPlaylists(user: user, limit: limit, offset: offset, fields: fields)
+        let count = ds.getPlaylistCount()
+        let metadata = APIMetadata(totalCount: count, limit: limit, offset: offset)
+        return APIPlaylists(playlists: playlists, _metadata: metadata)
     }
     
     

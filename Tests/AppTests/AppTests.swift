@@ -261,19 +261,17 @@ final class AppTests: XCTestCase {
         
         try app.test(.GET, "", afterResponse: { res in
             XCTAssertEqual(res.status, .ok)
-            let serverStatus = try res.content.decode(ServerStatus.self)
+            let serverStatus = try res.content.decode(APIServerStatus.self)
             
             XCTAssertEqual(serverStatus.version,myMusicServerVersion)
             XCTAssertEqual(serverStatus.apiVersions,myMusicApiVersions)
             XCTAssertEqual(serverStatus.name, "Robert’s iMac")
-            XCTAssertEqual(serverStatus.url.host, "192.168.1.20")
-            XCTAssertEqual(serverStatus.url.port, 8180)
+            XCTAssertEqual(serverStatus.address, "192.168.1.20:8180")
             XCTAssertEqual(serverStatus.albumCount, 0)
             XCTAssertEqual(serverStatus.singleCount, 0)
             XCTAssertEqual(serverStatus.playlistCount, 0)
 
-            let uptimeInSeconds = serverStatus.upTime
-            XCTAssertLessThan(uptimeInSeconds, 5.0)
+            XCTAssertLessThan(serverStatus.upTime ?? 0, 5)
             
         })
     }
@@ -747,7 +745,7 @@ final class AppTests: XCTestCase {
         try populateDB(app)
         
         try app.test(.GET, "\(albumsEndpoint)") { res in
-            let result = try res.content.decode(Albums.self)
+            let result = try res.content.decode(APIAlbums.self)
             XCTAssertEqual(result.albums.count, 2)
             for index in result.albums.indices {
                 let album = result.albums[index]
@@ -804,7 +802,7 @@ final class AppTests: XCTestCase {
             try req.query.encode(["limit" : "1", "offset" : "1",
                                   "fields" : "artist,composer,genre,recordingYear,directory,frontArt"])
         }, afterResponse: { res in
-            let result = try res.content.decode(Albums.self)
+            let result = try res.content.decode(APIAlbums.self)
             XCTAssertEqual(result.albums.count, 1)
             if let album = result.albums.first {
                 XCTAssertEqual(album.title,"Jean Sibelius: Finlandia - Valse triste - Tapiola")
@@ -836,7 +834,7 @@ final class AppTests: XCTestCase {
         try populateDB(app)
         
         try app.test(.GET, "\(singlesEndpoint)") { res in
-            let result = try res.content.decode(Singles.self)
+            let result = try res.content.decode(APISingles.self)
             XCTAssertEqual(result.singles.count, 2)
             for index in result.singles.indices {
                 let single = result.singles[index]
@@ -879,7 +877,7 @@ final class AppTests: XCTestCase {
             try req.query.encode(["limit" : "1", "offset" : "1",
                                   "fields" : "artist,composer,genre,recordingYear"])
         }, afterResponse: { res in
-            let result = try res.content.decode(Singles.self)
+            let result = try res.content.decode(APISingles.self)
             XCTAssertEqual(result.singles.count, 1)
             if let single = result.singles.first {
                 XCTAssertEqual(single.title, "Second Single")
@@ -932,7 +930,7 @@ final class AppTests: XCTestCase {
         try app.test(.GET, "\(transactionsEndpoint)", beforeRequest: { req in
             try req.query.encode(["startTime" : "0"])
         }, afterResponse:  { res in
-            let result = try res.content.decode(Transactions.self)
+            let result = try res.content.decode(APITransactions.self)
             XCTAssertEqual(result.transactions.count, 3)
             
             for index in result.transactions.indices {
@@ -990,7 +988,7 @@ final class AppTests: XCTestCase {
         try app.test(.GET, "\(transactionsEndpoint)", beforeRequest: { req in
             try req.query.encode(["startTime" : "0"])
         }, afterResponse:  { res in
-            let result = try res.content.decode(Transactions.self)
+            let result = try res.content.decode(APITransactions.self)
             XCTAssertEqual(result.transactions.count, 3)
             
             for index in result.transactions.indices {

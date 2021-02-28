@@ -13,14 +13,14 @@ func routealbums(_ albums: RoutesBuilder) throws {
     let ds = Datastore.shared()
 
     // MARK: GET /albums
-    albums.get { req -> Albums in
+    albums.get { req -> APIAlbums in
         let params = try req.query.decode(ListParams.self)
         let limit = params.limit ?? 10
         let offset = params.offset ?? 0
         let albums = try ds.getAlbums(limit: limit, offset: offset, fields: params.fields)
         let albumCount = ds.getAlbumCount()
-        let metadata = Metadata(totalCount: albumCount, limit: limit, offset: offset)
-        return Albums(albums: albums, _metadata: metadata)
+        let metadata = APIMetadata(totalCount: albumCount, limit: limit, offset: offset)
+        return APIAlbums(albums: albums, _metadata: metadata)
     }
     
     try albums.group(":id") { album in
@@ -72,7 +72,7 @@ func routealbum(_ album: RoutesBuilder) throws {
         do {
             try ds.postAlbum(album)
         } catch {
-            return HTTPResponseStatus.internalServerError
+            return HTTPResponseStatus.conflict
         }
         
         return HTTPResponseStatus.ok
@@ -122,7 +122,7 @@ func routealbumfiles(_ file: RoutesBuilder) throws {
     }
     
     // MARK: POST /albums/:id/:filename
-    file.on(.POST, [], body: .collect) { req -> HTTPResponseStatus in
+    file.on(.POST, [], body: .collect(maxSize: 100000000)) { req -> HTTPResponseStatus in
         if let id = req.parameters.get("id"),
            let filename = req.parameters.get("filename") {
             let value = req.body.data
@@ -135,7 +135,7 @@ func routealbumfiles(_ file: RoutesBuilder) throws {
     }
     
     // MARK: PUT /albums/:id/:filename
-    file.on(.PUT, [], body: .collect) {req -> HTTPResponseStatus in
+    file.on(.PUT, [], body: .collect(maxSize: 100000000)) {req -> HTTPResponseStatus in
         if let id = req.parameters.get("id"),
            let filename = req.parameters.get("filename") {
             let value = req.body.data

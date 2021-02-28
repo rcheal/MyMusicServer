@@ -13,14 +13,14 @@ func routesingles(_ singles: RoutesBuilder) throws {
     let ds = Datastore.shared()
 
     // MARK: GET /singles
-    singles.get { req -> Singles in
+    singles.get { req -> APISingles in
         let params = try req.query.decode(ListParams.self)
         let limit = params.limit ?? 10
         let offset = params.offset ?? 0
         let singles = try ds.getSingles(limit: limit, offset: offset, fields: params.fields)
         let count = ds.getSingleCount()
-        let metadata = Metadata(totalCount: count, limit: limit, offset: offset)
-        return Singles(singles: singles, _metadata: metadata)
+        let metadata = APIMetadata(totalCount: count, limit: limit, offset: offset)
+        return APISingles(singles: singles, _metadata: metadata)
     }
     
     try singles.group(":id") { single in
@@ -72,7 +72,7 @@ func routesingle(_ single: RoutesBuilder) throws {
         do {
             try ds.postSingle(single)
         } catch {
-            return HTTPResponseStatus.internalServerError
+            return HTTPResponseStatus.conflict
         }
         
         return HTTPResponseStatus.ok
@@ -120,7 +120,7 @@ func routesinglefiles(_ file: RoutesBuilder) throws {
     }
 
     // MARK: POST /singles/:id/:filename
-    file.on(.POST, [], body: .collect) { req -> HTTPResponseStatus in
+    file.on(.POST, [], body: .collect(maxSize: 100000000)) { req -> HTTPResponseStatus in
         if let id = req.parameters.get("id"),
            let filename = req.parameters.get("filename") {
             let value = req.body.data
@@ -133,7 +133,7 @@ func routesinglefiles(_ file: RoutesBuilder) throws {
     }
     
     // MARK: PUT /singles/:id/:filename
-    file.on(.PUT, [], body: .collect) {req -> HTTPResponseStatus in
+    file.on(.PUT, [], body: .collect(maxSize: 100000000)) {req -> HTTPResponseStatus in
         if let id = req.parameters.get("id"),
            let filename = req.parameters.get("filename") {
             let value = req.body.data

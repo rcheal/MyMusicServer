@@ -24,6 +24,22 @@ extension Playlist: Content {
     
 }
 
+extension APIAlbums: Content {
+    
+}
+
+extension APISingles: Content {
+    
+}
+
+extension APIPlaylists: Content {
+    
+}
+
+extension APITransactions: Content {
+    
+}
+
 struct FileContent: Content {
     var name: String
     var data: Data

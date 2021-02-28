@@ -102,6 +102,20 @@ class Datastore {
         }
     }
     
+    func getLastTransactionTime() -> String? {
+        do {
+            let transaction =  try dbQueue.read { db in
+                try Transaction.fetchOne(db, sql: "SELECT * FROM 'transaction' ORDER BY time DESC LIMIT 1")
+            }
+            if let transaction = transaction {
+                return transaction.time
+            }
+        } catch {
+            return nil
+        }
+        return nil
+    }
+    
     // MARK: Album functions
     
     func getAlbums(limit: Int, offset: Int, fields: String?) throws -> [Album] {
@@ -340,6 +354,7 @@ class Datastore {
                     if let fields = fields {
                         let fullSingle = single
                         single = Single(title: fullSingle.title, filename: "", track: fullSingle.track)
+                        single.id = fullSingle.id
                         single.addFields(fields, from: fullSingle)
                     }
                    singles.append(single)
@@ -391,7 +406,6 @@ class Datastore {
 
             let transaction = Transaction(method: "POST", entity: "single", id: single.id)
             try transaction.insert(db)
-            
         }
     }
     
@@ -530,20 +544,24 @@ class Datastore {
     
     // MARK: Playlist functions
     
-    func getPlaylists(user: String?) throws -> [PlaylistSummary] {
-        var playlists: [PlaylistSummary] = []
+    func getPlaylists(user: String?, limit: Int, offset: Int, fields: String?) throws -> [Playlist] {
+        var playlists: [Playlist] = []
         try dbQueue.read { db in
-            let rows = try Row.fetchAll(db, sql: "SELECT json FROM playlist WHERE user = ? OR shared = ?",
-                                        arguments: [user,true])
+            let rows = try Row.fetchAll(db, sql: "SELECT json FROM playlist WHERE user = ? OR shared = ? LIMIT ? OFFSET ?",
+                                        arguments: [user, true, limit, offset])
             for row in rows {
-                if let playlist = Playlist.decodeFrom(json: row["json"]) {
-                    var playlistSummary = PlaylistSummary(playlist)
-                    playlistSummary.sortTitle = nil
-                    playlists.append(playlistSummary)
+                if var playlist = Playlist.decodeFrom(json: row["json"]) {
+                    if let fields = fields {
+                        let fullPlaylist = playlist
+                        playlist = Playlist(fullPlaylist.title, user: fullPlaylist.user, shared: fullPlaylist.shared)
+                        playlist.id = fullPlaylist.id
+                        playlist.addFields(fields, from: fullPlaylist)
+                    }
+                   playlists.append(playlist)
                 }
             }
         }
-        return []
+        return playlists
     }
     
     func getPlaylistCount() -> Int {

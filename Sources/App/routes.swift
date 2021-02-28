@@ -14,8 +14,8 @@ func routes(_ app: Application) throws {
     // MARK: *** Server ***
 
     // MARK: GET /
-    app.get { req -> ServerStatus in
-        return ServerStatus(app)
+    app.get { req -> APIServerStatus in
+        return APIServerStatus.create(app)
     }
     
     // MARK GET /v1
@@ -34,18 +34,20 @@ func routes(_ app: Application) throws {
 }
 
 func routeVersion1(_ app: Application, _ ver: RoutesBuilder) throws {
+
     let ds = Datastore.shared()
 
+    
     // MARK: GET /v1
-    ver.get { req -> ServerStatus in
-        return ServerStatus(app)
+    ver.get { req -> APIServerStatus in
+        return APIServerStatus.create(app)
     }
     
     // MARK: GET /transactions?startTime=:time
-    ver.get("transactions") { req -> Transactions in
+    ver.get("transactions") { req -> APITransactions in
         let query = try req.query.decode(StartTime.self)
         if let startTime = query.startTime {
-            return Transactions(transactions: try ds.getTransactions(since: startTime))
+            return APITransactions(transactions: try ds.getTransactions(since: startTime))
         }
         throw Abort(.badRequest)
     }

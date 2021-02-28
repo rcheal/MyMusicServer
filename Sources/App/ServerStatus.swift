@@ -6,6 +6,7 @@
 //
 
 import Vapor
+import MusicMetadata
 
 var myMusicServerVersion = "1.0.0" // You must manually sync this with the git tag
 var myMusicApiVersions = "v1"  // comma separated list of supported api versions
@@ -30,31 +31,23 @@ class ServerState {
 
 let serverState = ServerState.shared
 
-struct ServerStatus: Content {
-
-    struct Address: Codable {
-        var host: String
-        var port: Int
-    }
+extension APIServerStatus: Content {
     
-    var version = myMusicServerVersion
-    var apiVersions = myMusicApiVersions
-    var name: String
-    var url: Address
-    var albumCount: Int
-    var singleCount: Int
-    var playlistCount: Int
-    var upTime: Double
-    
-    init(_ app: Application) {
+    static func create(_ app: Application) -> APIServerStatus {
+        var serverStatus = APIServerStatus()
+        serverStatus.version = myMusicServerVersion
+        serverStatus.apiVersions = myMusicApiVersions
         let ds = Datastore.shared()
         
-        upTime = serverState.upTime
+        serverStatus.upTime = Int(serverState.upTime)
         
-        name = app.http.server.configuration.serverName ?? Host.current().localizedName ?? "Unknown"
-        url = Address(host: app.http.server.configuration.hostname, port: app.http.server.configuration.port)
-        albumCount = ds.getAlbumCount()
-        singleCount = ds.getSingleCount()
-        playlistCount = ds.getPlaylistCount()
+        serverStatus.name = app.http.server.configuration.serverName ?? Host.current().localizedName ?? "Unknown"
+        serverStatus.address = "\(app.http.server.configuration.hostname):\(app.http.server.configuration.port)"
+        serverStatus.albumCount = ds.getAlbumCount()
+        serverStatus.singleCount = ds.getSingleCount()
+        serverStatus.playlistCount = ds.getPlaylistCount()
+        serverStatus.lastTransactionTime = ds.getLastTransactionTime()
+        return serverStatus
     }
+        
 }
