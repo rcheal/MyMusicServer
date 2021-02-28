@@ -255,10 +255,19 @@ final class AppTests: XCTestCase {
     }
     
     func testServerStatus() throws {
+        // Given
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        let expectedMinimumTimeStamp = formatter.string(from: Date())
+
         let app = Application(.testing)
         defer { app.shutdown() }
         try configure(app)
+
+        try populateDB(app)
         
+        // Then
         try app.test(.GET, "", afterResponse: { res in
             XCTAssertEqual(res.status, .ok)
             let serverStatus = try res.content.decode(APIServerStatus.self)
@@ -266,12 +275,13 @@ final class AppTests: XCTestCase {
             XCTAssertEqual(serverStatus.version,myMusicServerVersion)
             XCTAssertEqual(serverStatus.apiVersions,myMusicApiVersions)
             XCTAssertEqual(serverStatus.name, "Robert’s iMac")
-            XCTAssertEqual(serverStatus.address, "192.168.1.20:8180")
-            XCTAssertEqual(serverStatus.albumCount, 0)
-            XCTAssertEqual(serverStatus.singleCount, 0)
+            XCTAssertEqual(serverStatus.address, "127.0.0.1:8888")
+            XCTAssertEqual(serverStatus.albumCount, 2)
+            XCTAssertEqual(serverStatus.singleCount, 2)
             XCTAssertEqual(serverStatus.playlistCount, 0)
 
             XCTAssertLessThan(serverStatus.upTime ?? 0, 5)
+            XCTAssertGreaterThan(serverStatus.lastTransactionTime!, expectedMinimumTimeStamp)
             
         })
     }
@@ -411,6 +421,30 @@ final class AppTests: XCTestCase {
         })
     }
     
+    func testPostSingleFound() throws {
+        let single = createSingle(title: "Body and Soul", filename: "body&soul.mp3", track: 1)
+
+        let app = Application(.testing)
+        defer { app.shutdown() }
+        try configure(app)
+
+        let singleBuf = ByteBuffer(data: single.json ?? Data())
+        
+        try app.test(.POST, "\(singlesEndpoint)/\(single.id)", headers: HTTPHeaders([("Content-Type", "application/json")]), body: singleBuf, afterResponse: { res in
+            let transaction = try res.content.decode(Transaction.self)
+            XCTAssertEqual(res.status, .ok)
+            XCTAssertEqual(transaction.id, single.id)
+            XCTAssertEqual(transaction.method, "POST")
+            XCTAssertEqual(transaction.entity, "single")
+        })
+        
+        try app.test(.POST, "\(singlesEndpoint)/\(single.id)", headers: HTTPHeaders([("Content-Type", "application/json")]), body: singleBuf, afterResponse: { res in
+            XCTAssertEqual(res.status, .conflict)
+        })
+        
+
+    }
+    
     func testPutSingleNotFound() throws {
         let single = createSingle(title: "Body and Soul", filename: "body&soul.mp3", track: 1)
 
@@ -444,11 +478,19 @@ final class AppTests: XCTestCase {
         let newSingleBuf = ByteBuffer(data: newSingle.json ?? Data())
         
         try app.test(.POST, "\(singlesEndpoint)/\(single.id)", headers: HTTPHeaders([("Content-Type", "application/json")]), body: singleBuf, afterResponse: { res in
+            let transaction = try res.content.decode(Transaction.self)
             XCTAssertEqual(res.status, .ok)
+            XCTAssertEqual(transaction.id, single.id)
+            XCTAssertEqual(transaction.method, "POST")
+            XCTAssertEqual(transaction.entity, "single")
         })
         
         try app.test(.PUT, "\(singlesEndpoint)/\(single.id)", headers: HTTPHeaders([("Content-Type", "application/json")]), body: newSingleBuf, afterResponse: { res in
+            let transaction = try res.content.decode(Transaction.self)
             XCTAssertEqual(res.status, .ok)
+            XCTAssertEqual(transaction.id, single.id)
+            XCTAssertEqual(transaction.method, "PUT")
+            XCTAssertEqual(transaction.entity, "single")
         })
         
         try app.test(.GET, "\(singlesEndpoint)/\(single.id)", afterResponse:  { res in

@@ -61,47 +61,38 @@ func routesingle(_ single: RoutesBuilder) throws {
     }
     
     // MARK: POST /singles/:id
-    single.on(.POST, [], body: .collect) { req -> HTTPResponseStatus in
+    single.on(.POST, [], body: .collect) { req -> Transaction in
         let id = req.parameters.get("id")!
         let single = try req.content.decode(Single.self)
         
         if id != single.id {
-            return HTTPResponseStatus.conflict
+            throw Abort(.conflict)
         }
         
         do {
-            try ds.postSingle(single)
+            return try ds.postSingle(single)
         } catch {
-            return HTTPResponseStatus.conflict
+            throw Abort(.conflict)
         }
-        
-        return HTTPResponseStatus.ok
-        
     }
     
     // MARK: PUT /singles/:id
-    single.on(.PUT, [], body: .collect) { req -> HTTPResponseStatus in
+    single.on(.PUT, [], body: .collect) { req -> Transaction in
         let id = req.parameters.get("id")!
         let single = try req.content.decode(Single.self)
         
         if id != single.id {
-            return HTTPResponseStatus.conflict
+            throw Abort(.conflict)
         }
         
-        try ds.putSingle(single)
-        
-        return HTTPResponseStatus.ok
+        return try ds.putSingle(single)        
     }
     
     // MARK: DELETE /singles/:id
-    single.delete { req -> HTTPResponseStatus in
-        if let id = req.parameters.get("id") {
-            try ds.deleteSingle(id)
-        } else {
-            throw Abort(.notFound)
-        }
+    single.delete { req -> Transaction in
+        let id = req.parameters.get("id")!
         
-        return HTTPResponseStatus.ok
+        return try ds.deleteSingle(id)
     }
 }
 

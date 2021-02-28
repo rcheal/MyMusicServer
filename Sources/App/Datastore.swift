@@ -191,7 +191,7 @@ class Datastore {
      
      - throws: Database exceptions
      */
-    func postAlbum(_ album: Album)  throws {
+    func postAlbum(_ album: Album) throws -> Transaction {
         try dbQueue.write { db in
             try db.execute(
                 sql: """
@@ -199,33 +199,31 @@ class Datastore {
                 """,
                 arguments: [album.id, album.json])
             
+            if db.changesCount < 1 {
+                throw Abort(.found)
+            }
+            
             let transaction = Transaction(method: "POST", entity: "album", id: album.id)
             try transaction.insert(db)
-
+            return transaction
         }
     }
     
-    func putAlbum(_ album: Album) throws {
+    func putAlbum(_ album: Album) throws  -> Transaction {
         try dbQueue.write { db in
-            var changes = 0
-            do {
             try db.execute(
                 sql: """
                     UPDATE album SET json = ? WHERE id = ?
                 """,
                 arguments: [album.json, album.id])
             
-            changes = db.changesCount
-            } catch {
-                throw Abort(.internalServerError)
+            if db.changesCount < 1 {
+                throw Abort(.notFound)
             }
             
             let transaction = Transaction(method: "PUT", entity: "album", id: album.id)
             try transaction.insert(db)
-
-            if changes < 1 {
-                throw Abort(.notFound)
-            }
+            return transaction
          }
     }
     
@@ -240,8 +238,10 @@ class Datastore {
      
      - throws: Database or filesystem errors.  There is no error if the album does not exist.
      */
-    func deleteAlbum(_ id: String) throws {
+    func deleteAlbum(_ id: String) throws -> Transaction {
         var directory: String?
+        var transaction: Transaction?
+        
         try dbQueue.read { db in
             if let row = try Row.fetchOne(db, sql: "SELECT json FROM album WHERE id = ?", arguments: [id]) {
 
@@ -249,29 +249,30 @@ class Datastore {
                 directory = album?.directory
             }
         }
-        let deleted = try dbQueue.write { db -> Bool in
-            var result = false
-            do {
-                result = try Album.deleteOne(db, key: id)
-                if !result {
-                    throw Abort(.notFound)
-                }
-                
-                let transaction = Transaction(method: "DELETE", entity: "album", id: id)
-                try transaction.insert(db)
-                
-            } catch is PersistenceError {
-                throw Abort(.notFound)
-            }
-            return result
-        }
-        
-        if let albumDir = directory, deleted {
+
+        if let albumDir = directory {
             let fm = FileManager.default
 
             let dirURL = fileRootURL.appendingPathComponent(albumDir)
             try? fm.removeItem(at: dirURL)
         }
+
+        let _ = try dbQueue.write { db -> Bool in
+            let result = try Album.deleteOne(db, key: id)
+            if !result {
+                throw Abort(.notFound)
+            }
+                
+            transaction = Transaction(method: "DELETE", entity: "album", id: id)
+            try transaction?.insert(db)
+            return result
+        }
+        
+        if let transaction = transaction {
+            return transaction
+        }
+        
+        throw Abort(.internalServerError)
     }
     
     private func getAlbumDirectoryURL(_ id: String) -> URL? {
@@ -396,46 +397,47 @@ class Datastore {
         return single
     }
     
-    func postSingle(_ single: Single)  throws {
+    func postSingle(_ single: Single) throws -> Transaction {
         try dbQueue.write { db in
             try db.execute(
                 sql: """
                     INSERT INTO single (id, json) VALUES (?, ?)
                 """,
                 arguments: [single.id, single.json])
+            
+            if db.changesCount < 1 {
+                throw Abort(.found)
+            }
 
             let transaction = Transaction(method: "POST", entity: "single", id: single.id)
             try transaction.insert(db)
+            return transaction
         }
     }
     
-    func putSingle(_ single: Single) throws {
+    func putSingle(_ single: Single) throws -> Transaction {
         try dbQueue.write { db in
-            var changes = 0
-            do {
-                try db.execute(
-                    sql: """
-                        UPDATE single SET json = ? WHERE id = ?
-                    """,
-                    arguments: [single.json, single.id])
-                
-                changes = db.changesCount
-
-                let transaction = Transaction(method: "PUT", entity: "single", id: single.id)
-                try transaction.insert(db)
-                
-            } catch {
-                throw Abort(.internalServerError)
-            }
-            if changes < 1 {
+            try db.execute(
+                sql: """
+                    UPDATE single SET json = ? WHERE id = ?
+                """,
+                arguments: [single.json, single.id])
+            
+            if db.changesCount < 1 {
                 throw Abort(.notFound)
             }
+
+            let transaction = Transaction(method: "PUT", entity: "single", id: single.id)
+            try transaction.insert(db)
+            return transaction
         }
     }
 
-    func deleteSingle(_ id: String) throws {
+    func deleteSingle(_ id: String) throws -> Transaction {
         var directory: String?
         var filename: String?
+        var transaction: Transaction?
+        
         try dbQueue.read { db in
             if let row = try Row.fetchOne(db, sql: "SELECT json FROM single WHERE id = ?", arguments: [id]) {
 
@@ -444,25 +446,9 @@ class Datastore {
                 filename = single?.filename
             }
         }
-        let deleted = try dbQueue.write { db -> Bool in
-            var result = false
-            do {
-                result = try Single.deleteOne(db, key: id)
-                if !result {
-                    throw Abort(.notFound)
-                }
-
-                let transaction = Transaction(method: "DELETE", entity: "single", id: id)
-                try transaction.insert(db)
-                
-             } catch is PersistenceError {
-                throw Abort(.notFound)
-            }
-            return result
-        }
         
         if let directory = directory,
-           let filename = filename, deleted {
+           let filename = filename {
             let fm = FileManager.default
 
             let dirURL = fileRootURL.appendingPathComponent(directory)
@@ -471,7 +457,26 @@ class Datastore {
             if let contents = try? fm.contentsOfDirectory(atPath: dirURL.path), contents.isEmpty {
                 try? fm.removeItem(at: dirURL)
             }
+        } else {
+            throw Abort(.internalServerError)
         }
+        
+        let _ = try dbQueue.write { db -> Bool in
+            let result = try Single.deleteOne(db, key: id)
+            if !result {
+                throw Abort(.notFound)
+            }
+            
+            transaction = Transaction(method: "DELETE", entity: "single", id: id)
+            try transaction?.insert(db)
+            return result
+        }
+        
+        if let transaction = transaction {
+            return transaction
+        }
+        
+        throw Abort(.internalServerError)
     }
     
     private func getSingleDirectoryURL(_ id: String) -> URL? {
@@ -596,7 +601,7 @@ class Datastore {
         return playlist
     }
     
-    func postPlaylist(_ playlist: Playlist) throws {
+    func postPlaylist(_ playlist: Playlist) throws -> Transaction  {
         try dbQueue.write { db in
             try db.execute(
                 sql: """
@@ -604,54 +609,53 @@ class Datastore {
                 """,
                 arguments: [playlist.id, playlist.user, playlist.shared, playlist.json])
 
+            if db.changesCount < 1 {
+                throw Abort(.found)
+            }
+            
             let transaction = Transaction(method: "POST", entity: "playlist", id: playlist.id)
             try transaction.insert(db)
-            
+            return transaction
         }
 
     }
     
-    func putPlaylist(_ playlist: Playlist) throws {
+    func putPlaylist(_ playlist: Playlist) throws -> Transaction {
         try dbQueue.write { db in
-            var changes = 0
-            do {
-                try db.execute(
-                    sql: """
-                        UPDATE playlist SET user = ?, shared = ?, json = ? WHERE id = ?
-                    """,
-                    arguments: [playlist.user, playlist.shared, playlist.json, playlist.id])
-                
-                changes = db.changesCount
+            try db.execute(
+                sql: """
+                    UPDATE playlist SET user = ?, shared = ?, json = ? WHERE id = ?
+                """,
+                arguments: [playlist.user, playlist.shared, playlist.json, playlist.id])
+            
+            if db.changesCount < 1 {
+                throw Abort(.notFound)
+            }
 
-                let transaction = Transaction(method: "PUT", entity: "playlist", id: playlist.id)
-                try transaction.insert(db)
-                
-            } catch {
+            let transaction = Transaction(method: "PUT", entity: "playlist", id: playlist.id)
+            try transaction.insert(db)
+            return transaction
+        }
+    }
+    
+    func deletePlaylist(_ id: String) throws -> Transaction {
+        var transaction: Transaction?
+        
+        let _ = try dbQueue.write { db -> Bool in
+            let result = try Playlist.deleteOne(db, key: id)
+            if !result {
                 throw Abort(.internalServerError)
             }
-            if changes < 1 {
-                throw Abort(.notFound)
-            }
-        }
-    }
-    
-    func deletePlaylist(_ id: String) throws {
-        let deleted = try dbQueue.write { db -> Bool in
-            var result = false
-            do {
-                result = try Playlist.deleteOne(db, key: id)
                 
-                let transaction = Transaction(method: "DELETE", entity: "playlist", id: id)
-                try transaction.insert(db)
-                
-            } catch is PersistenceError {
-                throw Abort(.notFound)
-            }
+            transaction = Transaction(method: "DELETE", entity: "playlist", id: id)
+            try transaction?.insert(db)
             return result
         }
-        if !deleted {
-            throw Abort(.notFound)
+        
+        if let transaction = transaction {
+            return transaction
         }
 
+        throw Abort(.notFound)
     }
 }

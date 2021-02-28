@@ -60,47 +60,38 @@ func routeplaylist(_ playlist: RoutesBuilder) throws {
     }
     
     // MARK: POST /playlists/:id
-    playlist.on(.POST, [], body: .collect) { req -> HTTPResponseStatus in
+    playlist.on(.POST, [], body: .collect) { req -> Transaction in
         let id = req.parameters.get("id")!
         let playlist = try req.content.decode(Playlist.self)
         
         if id != playlist.id {
-            return HTTPResponseStatus.conflict
+            throw Abort(.conflict)
         }
         
         do {
-            try ds.postPlaylist(playlist)
+            return try ds.postPlaylist(playlist)
         } catch {
-            return HTTPResponseStatus.internalServerError
+            throw Abort(.conflict)
         }
-        
-        return HTTPResponseStatus.ok
-        
     }
     
     // MARK: PUT /playlists/:id
-    playlist.on(.PUT, [], body: .collect) { req -> HTTPResponseStatus in
+    playlist.on(.PUT, [], body: .collect) { req -> Transaction in
         let id = req.parameters.get("id")!
         let playlist = try req.content.decode(Playlist.self)
         
         if id != playlist.id {
-            return HTTPResponseStatus.conflict
+            throw Abort(.conflict)
         }
         
-        try ds.putPlaylist(playlist)
-        
-        return HTTPResponseStatus.ok
+        return try ds.putPlaylist(playlist)
     }
     
-    // MARK: DELETE /playlists/:id - notImplemented
-    playlist.delete { req -> HTTPResponseStatus in
-        if let id = req.parameters.get("id") {
-            try ds.deletePlaylist(id)
-        } else {
-            throw Abort(.notFound)
-        }
+    // MARK: DELETE /playlists/:id
+    playlist.delete { req -> Transaction in
+        let id = req.parameters.get("id")!
         
-        return HTTPResponseStatus.ok
+        return try ds.deletePlaylist(id)
     }
 
 }

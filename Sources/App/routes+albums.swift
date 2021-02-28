@@ -61,47 +61,38 @@ func routealbum(_ album: RoutesBuilder) throws {
     }
     
     // MARK: POST /albums/:id
-    album.on(.POST, [], body: .collect) { req -> HTTPResponseStatus in
+    album.on(.POST, [], body: .collect) { req -> Transaction in
         let id = req.parameters.get("id")!
         let album = try req.content.decode(Album.self)
         
         if id != album.id {
-            return HTTPResponseStatus.conflict
+            throw Abort(.conflict)
         }
         
         do {
-            try ds.postAlbum(album)
+            return try ds.postAlbum(album)
         } catch {
-            return HTTPResponseStatus.conflict
+            throw Abort(.conflict)
         }
-        
-        return HTTPResponseStatus.ok
-        
     }
     
     // MARK: PUT /albums/:id
-    album.on(.PUT, [], body: .collect) { req -> HTTPResponseStatus in
+    album.on(.PUT, [], body: .collect) { req -> Transaction in
         let id = req.parameters.get("id")!
         let album = try req.content.decode(Album.self)
         
         if id != album.id {
-            return HTTPResponseStatus.conflict
+            throw Abort(.conflict)
         }
         
-        try ds.putAlbum(album)
-        
-        return HTTPResponseStatus.ok
+        return try ds.putAlbum(album)
     }
     
     // MARK: DELETE /albums/:id
-    album.delete { req -> HTTPResponseStatus in
-        if let id = req.parameters.get("id") {
-            try ds.deleteAlbum(id)
-        } else {
-            throw Abort(.notFound)
-        }
-        
-        return HTTPResponseStatus.ok
+    album.delete { req -> Transaction in
+        let id = req.parameters.get("id")!
+            
+        return try ds.deleteAlbum(id)
     }
 }
 
