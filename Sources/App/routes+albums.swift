@@ -61,7 +61,7 @@ func routealbum(_ album: RoutesBuilder) throws {
     }
     
     // MARK: POST /albums/:id
-    album.on(.POST, [], body: .collect) { req -> Transaction in
+    album.on(.POST, [], body: .collect(maxSize: 200000)) { req -> Transaction in
         let id = req.parameters.get("id")!
         let album = try req.content.decode(Album.self)
         
@@ -77,7 +77,7 @@ func routealbum(_ album: RoutesBuilder) throws {
     }
     
     // MARK: PUT /albums/:id
-    album.on(.PUT, [], body: .collect) { req -> Transaction in
+    album.on(.PUT, [], body: .collect(maxSize: 200000)) { req -> Transaction in
         let id = req.parameters.get("id")!
         let album = try req.content.decode(Album.self)
         
@@ -113,7 +113,7 @@ func routealbumfiles(_ file: RoutesBuilder) throws {
     }
     
     // MARK: POST /albums/:id/:filename
-    file.on(.POST, [], body: .collect(maxSize: 100000000)) { req -> HTTPResponseStatus in
+    file.on(.POST, [], body: .collect(maxSize: 400000000)) { req -> HTTPResponseStatus in
         if let id = req.parameters.get("id"),
            let filename = req.parameters.get("filename") {
             let value = req.body.data
@@ -126,7 +126,7 @@ func routealbumfiles(_ file: RoutesBuilder) throws {
     }
     
     // MARK: PUT /albums/:id/:filename
-    file.on(.PUT, [], body: .collect(maxSize: 100000000)) {req -> HTTPResponseStatus in
+    file.on(.PUT, [], body: .collect(maxSize: 400000000)) {req -> HTTPResponseStatus in
         if let id = req.parameters.get("id"),
            let filename = req.parameters.get("filename") {
             let value = req.body.data

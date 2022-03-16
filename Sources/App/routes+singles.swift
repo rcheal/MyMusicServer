@@ -111,7 +111,7 @@ func routesinglefiles(_ file: RoutesBuilder) throws {
     }
 
     // MARK: POST /singles/:id/:filename
-    file.on(.POST, [], body: .collect(maxSize: 100000000)) { req -> HTTPResponseStatus in
+    file.on(.POST, [], body: .collect(maxSize: 400000000)) { req -> HTTPResponseStatus in
         if let id = req.parameters.get("id"),
            let filename = req.parameters.get("filename") {
             let value = req.body.data
@@ -124,7 +124,7 @@ func routesinglefiles(_ file: RoutesBuilder) throws {
     }
     
     // MARK: PUT /singles/:id/:filename
-    file.on(.PUT, [], body: .collect(maxSize: 100000000)) {req -> HTTPResponseStatus in
+    file.on(.PUT, [], body: .collect(maxSize: 400000000)) {req -> HTTPResponseStatus in
         if let id = req.parameters.get("id"),
            let filename = req.parameters.get("filename") {
             let value = req.body.data

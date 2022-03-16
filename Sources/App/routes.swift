@@ -15,7 +15,7 @@ func routes(_ app: Application) throws {
 
     // MARK: GET /
     app.get { req -> APIServerStatus in
-        return APIServerStatus.create(app)
+        return APIServerStatus.create(app, req: req)
     }
     
     // MARK GET /v1
@@ -40,7 +40,7 @@ func routeVersion1(_ app: Application, _ ver: RoutesBuilder) throws {
     
     // MARK: GET /v1
     ver.get { req -> APIServerStatus in
-        return APIServerStatus.create(app)
+        return APIServerStatus.create(app, req: req)
     }
     
     // MARK: GET /transactions?startTime=:time

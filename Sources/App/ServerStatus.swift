@@ -33,16 +33,18 @@ let serverState = ServerState.shared
 
 extension APIServerStatus: Content {
     
-    static func create(_ app: Application) -> APIServerStatus {
+    static func create(_ app: Application, req: Request? = nil) -> APIServerStatus {
         var serverStatus = APIServerStatus()
         serverStatus.version = myMusicServerVersion
         serverStatus.apiVersions = myMusicApiVersions
+        let hostname = app.http.server.configuration.hostname
+        
         let ds = Datastore.shared()
         
         serverStatus.upTime = Int(serverState.upTime)
         
         serverStatus.name = app.http.server.configuration.serverName ?? Host.current().localizedName ?? "Unknown"
-        serverStatus.address = "\(app.http.server.configuration.hostname):\(app.http.server.configuration.port)"
+        serverStatus.address = "\(hostname):\(app.http.server.configuration.port)"
         serverStatus.albumCount = ds.getAlbumCount()
         serverStatus.singleCount = ds.getSingleCount()
         serverStatus.playlistCount = ds.getPlaylistCount()
