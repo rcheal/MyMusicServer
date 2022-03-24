@@ -116,10 +116,12 @@ func routealbumfiles(_ file: RoutesBuilder) throws {
     file.on(.POST, [], body: .collect(maxSize: 400000000)) { req -> HTTPResponseStatus in
         if let id = req.parameters.get("id"),
            let filename = req.parameters.get("filename") {
-            let value = req.body.data
-            let data = Data(buffer: value!)
-            try ds.postAlbumFile(id, filename: filename, data: data)
-            return HTTPResponseStatus.ok
+            if let value = req.body.data {
+                let data = Data(buffer: value)
+                try ds.postAlbumFile(id, filename: filename, data: data)
+                return HTTPResponseStatus.ok
+            }
+            return HTTPResponseStatus.noContent
         }
         
         return HTTPResponseStatus.badRequest

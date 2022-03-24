@@ -14,9 +14,9 @@ let package = Package(
             url: "file:///Users/bob/Developer/MyMusic/MusicMetadata",
             from: "1.0.0"),
         .package(
-            name: "GRDB",
-            url: "https://github.com/groue/GRDB.swift.git",
-            from: "5.2.0")
+            name: "SQLite",
+            url: "https://github.com/stephencelis/SQLite.swift.git",
+            from: "0.13.1")
     ],
     targets: [
         .target(
@@ -24,7 +24,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Vapor", package: "vapor"),
                 .byName(name: "MusicMetadata"),
-                .byName(name: "GRDB")
+                .byName(name: "SQLite")
             ],
             swiftSettings: [
                 // Enable better optimizations when building in Release configuration. Despite the use of
@@ -36,12 +36,12 @@ let package = Package(
         .target(name: "Run", dependencies: [
                     .target(name: "App"),
                     .byName(name: "MusicMetadata"),
-                    .byName(name: "GRDB")]),
+                    .byName(name: "SQLite")]),
         .testTarget(name: "AppTests", dependencies: [
             .target(name: "App"),
             .product(name: "XCTVapor", package: "vapor"),
             .byName(name: "MusicMetadata"),
-            .byName(name: "GRDB")
+            .byName(name: "SQLite")
         ])
     ]
 )

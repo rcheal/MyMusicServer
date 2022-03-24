@@ -280,7 +280,7 @@ final class AppTests: XCTestCase {
             XCTAssertEqual(serverStatus.singleCount, 2)
             XCTAssertEqual(serverStatus.playlistCount, 0)
 
-            XCTAssertLessThan(serverStatus.upTime ?? 0, 5)
+            XCTAssertLessThan(serverStatus.upTime ?? 0, 10)
             XCTAssertGreaterThan(serverStatus.lastTransactionTime!, expectedMinimumTimeStamp)
             
         })

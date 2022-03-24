@@ -7,8 +7,9 @@
 
 import Foundation
 import MusicMetadata
-import GRDB
 import Vapor
+import SQLite
+import SQLite3
 
 class Datastore {
     public static var sharedInstance: Datastore?
@@ -30,11 +31,19 @@ class Datastore {
     }
     
     var isMemory = false
-    
+    private let id = Expression<String>("id")
+    private let json = Expression<Blob>("json")
+    private let user = Expression<String?>("user")
+    private let shared = Expression<Bool>("shared")
+    private let time = Expression<String>("time")
+    private let method = Expression<String>("method")
+    private let entity = Expression<String>("entity")
+
     public var fileRootURL: URL
     
-    private var dbQueue: DatabaseQueue
 
+    public var db: Connection?
+    
     private init(memory: Bool = false) {
         isMemory = memory
         let subDirectory = isMemory ? "MyMusicServerMemoryFiles" : "MyMusicServerFiles"
@@ -46,73 +55,89 @@ class Datastore {
         }
         if memory {
             fileRootURL = baseURL
-            dbQueue = DatabaseQueue()
+            do {
+                db = try Connection(.inMemory)
+            } catch {
+                db = nil
+            }
         } else {
             fileRootURL = baseURL.appendingPathComponent("music")
             let dbURL = baseURL.appendingPathComponent("MyMusic.sqlite")
             do {
-                try dbQueue = DatabaseQueue(path: dbURL.path)
+                db = try Connection(dbURL.path)
             } catch {
-                dbQueue = DatabaseQueue()
+                db = nil
+                print("Unable to open database file - \(dbURL.path)")
             }
         }
         try? migrateDb()
     }
 
     func migrateDb() throws {
-        var migrator = DatabaseMigrator()
         
-        // 1st migration
-        migrator.registerMigration("V1") { db in
-            try db.create(table: "album") { t in
-                t.column("id", .text).primaryKey()
-                t.column("json", .blob)
-            }
-            
-            try db.create(table: "single") { t in
-                t.column("id", .text).primaryKey()
-                t.column("json", .blob)
-            }
-            
-            try db.create(table: "playlist") { t in
-                t.column("id", .text).primaryKey()
-                t.column("user", .text)
-                t.column("shared", .boolean)
-                t.column("json", .blob)
-            }
-
-            
-            try db.create(table: "transaction") { t in
-                t.column("time", .text).primaryKey()
-                t.column("id", .text)
-                t.column("method", .text)           // 'GET', 'POST', 'PUT' or 'DELETE'
-                t.column("entity", .text)           // 'album', 'single', or 'playlist'
-            }
+        guard let db = db else {
+            return
         }
         
-        try migrator.migrate(dbQueue)
+        let albums = Table("album")
+        try db.run(albums.create(ifNotExists: true) { t in
+            t.column(id, primaryKey: true)
+            t.column(json)
+        })
+        
+
+        let singles = Table("single")
+        try db.run(singles.create(ifNotExists: true) { t in
+            t.column(id, primaryKey: true)
+            t.column(json)
+        })
+            
+        let playlists = Table("playlist")
+        try db.run(playlists.create(ifNotExists: true) { t in
+            t.column(id, primaryKey: true)
+            t.column(user)
+            t.column(shared)
+            t.column(json)
+        })
+        
+        let transactions = Table("transaction")
+        try db.run(transactions.create(ifNotExists: true) { t in
+            t.column(time, primaryKey: true)
+            t.column(id)
+            t.column(method)           // 'GET', 'POST', 'PUT' or 'DELETE'
+            t.column(entity)           // 'album', 'single', or 'playlist'
+        })
+        
     }
 
     // MARK: Server functions
     
     func getTransactions(since timestamp: String) throws -> [Transaction] {
-        return try dbQueue.read { db in
-            try Transaction.fetchAll(db, sql: "SELECT * FROM 'transaction' WHERE time >= ?",
-                                     arguments: [timestamp])
+        var transactions: [Transaction] = []
+        guard let db = db else {
+            return []
         }
+        let table = Table("transaction")
+        for row in try db.prepare(table.filter(time >= timestamp)) {
+            let transaction = Transaction(method: row[method], entity: row[entity], id: row[id])
+            transactions.append(transaction)
+        }
+        return transactions
     }
     
     func getLastTransactionTime() -> String? {
+        guard let db = db else {
+            return nil
+        }
+        let table = Table("transaction")
         do {
-            let transaction =  try dbQueue.read { db in
-                try Transaction.fetchOne(db, sql: "SELECT * FROM 'transaction' ORDER BY time DESC LIMIT 1")
-            }
-            if let transaction = transaction {
-                return transaction.time
+            for row in try db.prepare(table.order(time.desc).limit(1)) {
+                return row[time]
             }
         } catch {
             return nil
         }
+        
         return nil
     }
     
@@ -120,19 +145,19 @@ class Datastore {
     
     func getAlbums(limit: Int, offset: Int, fields: String?) throws -> [Album] {
         var albums: [Album] = []
-        try dbQueue.read { db in
-            let rows = try Row.fetchAll(db, sql: "SELECT json FROM album LIMIT ? OFFSET ?",
-                                        arguments: [limit, offset])
-            for row in rows {
-                if var album = Album.decodeFrom(json: row["json"]) {
-                    if let fields = fields {
-                        let fullAlbum = album
-                        album = Album(title: fullAlbum.title)
-                        album.id = fullAlbum.id
-                        album.addFields(fields, from: fullAlbum)
-                    }
-                    albums.append(album)
+        guard let db = db else {
+            return albums
+        }
+        let table = Table("album")
+        for row in try db.prepare(table.select(json).limit(limit, offset: offset)) {
+            if var album = Album.decodeFrom(json: Data.fromDatatypeValue(row[json])) {
+                if let fields = fields {
+                    let fullAlbum = album
+                    album = Album(title: fullAlbum.title)
+                    album.id = fullAlbum.id
+                    album.addFields(fields, from: fullAlbum)
                 }
+                albums.append(album)
             }
         }
         return albums
@@ -140,10 +165,12 @@ class Datastore {
     
     func getAlbumCount() -> Int {
         var count = -1
+        guard let db = db else {
+            return count
+        }
+        let table = Table("album")
         do {
-            try dbQueue.read { db in
-                count = try Album.fetchCount(db)
-            }
+            count = try db.scalar(table.count)
         } catch {
         }
         return count
@@ -151,11 +178,11 @@ class Datastore {
 
     func albumExists(_ id: String) throws -> Bool {
         var exists = false
-        try dbQueue.read { db in
-            if let row = try Row.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 from album WHERE id = ?)", arguments: [id]) {
-                exists = (row["EXISTS"] == 1)
-            }
+        guard let db = db else {
+            return exists
         }
+        let table = Table("album")
+        exists = try db.scalar(table.filter(self.id == id).count) == 1
         return exists
     }
     
@@ -171,13 +198,18 @@ class Datastore {
      - returns: Album?
      */
     func getAlbum(_ id: String) throws  -> Album? {
-        var album: Album?
-        try dbQueue.read { db in
-            if let row = try Row.fetchOne(db, sql: "SELECT json FROM album WHERE id = ?", arguments: [id]) {
-                album = Album.decodeFrom(json: row["json"])
-            }
+        guard let db = db else {
+            return nil
         }
-        return album
+        let table = Table("album")
+        for row in try db.prepare(table.select(json).filter(self.id == id)) {
+            if let album = Album.decodeFrom(json: Data.fromDatatypeValue(row[json])) {
+                return album
+            }
+            return nil
+        }
+
+        return nil
     }
     
     /**
@@ -192,39 +224,59 @@ class Datastore {
      - throws: Database exceptions
      */
     func postAlbum(_ album: Album) throws -> Transaction {
-        try dbQueue.write { db in
-            try db.execute(
-                sql: """
-                    INSERT INTO album (id, json) VALUES (?, ?)
-                """,
-                arguments: [album.id, album.json])
-            
-            if db.changesCount < 1 {
-                throw Abort(.found)
-            }
-            
-            let transaction = Transaction(method: "POST", entity: "album", id: album.id)
-            try transaction.insert(db)
-            return transaction
+        guard let db = db else {
+            throw Abort(.serviceUnavailable)
         }
+        let table = Table("album")
+        let transactionTable = Table("transaction")
+        let transaction = Transaction(method: "POST", entity: "album", id: album.id)
+        if let json = album.json {
+            do {
+                try db.transaction {
+                    try db.run(table.insert(self.id <- album.id, self.json <- json.datatypeValue))
+                    try db.run(transactionTable.insert(
+                        time <- transaction.time,
+                        method <- transaction.method,
+                        entity <- transaction.entity,
+                        id <- transaction.id))
+                }
+            } catch let Result.error(_, code, _) where code == SQLITE_CONSTRAINT {
+                throw Abort(.found)
+            } catch {
+                throw Abort(.serviceUnavailable)
+            }
+        } else {
+            throw Abort(.noContent)
+        }
+        return transaction
     }
     
     func putAlbum(_ album: Album) throws  -> Transaction {
-        try dbQueue.write { db in
-            try db.execute(
-                sql: """
-                    UPDATE album SET json = ? WHERE id = ?
-                """,
-                arguments: [album.json, album.id])
-            
-            if db.changesCount < 1 {
+        guard let db = db else {
+            throw Abort(.serviceUnavailable)
+        }
+        let table = Table("album")
+        let transactionTable = Table("transaction")
+        let transaction = Transaction(method: "PUT", entity: "album", id: album.id)
+        if let json = album.json {
+            let albumToModify = table.filter(id == album.id)
+            do {
+                try db.transaction {
+                    if try db.run(albumToModify.update(self.json <- json.datatypeValue)) > 0 {
+                        try db.run(transactionTable.insert(
+                            time <- transaction.time,
+                            method <- transaction.method,
+                            entity <- transaction.entity,
+                            id <- transaction.id))
+                    } else {
+                        throw Abort(.notFound)
+                    }
+                }
+            } catch {
                 throw Abort(.notFound)
             }
-            
-            let transaction = Transaction(method: "PUT", entity: "album", id: album.id)
-            try transaction.insert(db)
-            return transaction
-         }
+        }
+        return transaction
     }
     
     /**
@@ -240,39 +292,39 @@ class Datastore {
      */
     func deleteAlbum(_ id: String) throws -> Transaction {
         var directory: String?
-        var transaction: Transaction?
-        
-        try dbQueue.read { db in
-            if let row = try Row.fetchOne(db, sql: "SELECT json FROM album WHERE id = ?", arguments: [id]) {
-
-                let album = Album.decodeFrom(json: row["json"])
-                directory = album?.directory
-            }
+        guard let db = db else {
+            throw Abort(.serviceUnavailable)
         }
-
+        let table = Table("album")
+        let transactionTable =  Table("transaction")
+        for row in try db.prepare(table.select(json).filter(self.id == id)) {
+            if let album = Album.decodeFrom(json: Data.fromDatatypeValue(row[json])) {
+                directory = album.directory
+            }
+            break
+        }
         if let albumDir = directory {
             let fm = FileManager.default
 
             let dirURL = fileRootURL.appendingPathComponent(albumDir)
             try? fm.removeItem(at: dirURL)
         }
-
-        let _ = try dbQueue.write { db -> Bool in
-            let result = try Album.deleteOne(db, key: id)
-            if !result {
-                throw Abort(.notFound)
+        do {
+            let albumToDelete = table.filter(self.id == id)
+            let transaction = Transaction(method: "DELETE", entity: "album", id: id)
+            try db.transaction {
+                if try db.run(albumToDelete.delete()) > 0 {
+                    try db.run(transactionTable.insert(
+                        time <- transaction.time,
+                        method <- transaction.method,
+                        entity <- transaction.entity,
+                        self.id <- transaction.id))
+                } else {
+                    throw Abort(.notFound)
+                }
             }
-                
-            transaction = Transaction(method: "DELETE", entity: "album", id: id)
-            try transaction?.insert(db)
-            return result
-        }
-        
-        if let transaction = transaction {
             return transaction
         }
-        
-        throw Abort(.internalServerError)
     }
     
     private func getAlbumDirectoryURL(_ id: String) -> URL? {
@@ -347,19 +399,19 @@ class Datastore {
 
     func getSingles(limit: Int, offset: Int, fields: String?) throws -> [Single] {
         var singles: [Single] = []
-        try dbQueue.read { db in
-            let rows = try Row.fetchAll(db, sql: "SELECT json FROM single LIMIT ? OFFSET ?",
-                                        arguments: [limit, offset])
-            for row in rows {
-                if var single = Single.decodeFrom(json: row["json"]) {
-                    if let fields = fields {
-                        let fullSingle = single
-                        single = Single(title: fullSingle.title, filename: "", track: fullSingle.track)
-                        single.id = fullSingle.id
-                        single.addFields(fields, from: fullSingle)
-                    }
-                   singles.append(single)
+        guard let db = db else {
+            return singles
+        }
+        let table = Table("single")
+        for row in try db.prepare(table.select(json).limit(limit, offset: offset)) {
+            if var single = Single.decodeFrom(json: Data.fromDatatypeValue(row[json])) {
+                if let fields = fields {
+                    let fullSingle = single
+                    single = Single(title: fullSingle.title, filename: "")
+                    single.id = fullSingle.id
+                    single.addFields(fields, from: fullSingle)
                 }
+                singles.append(single)
             }
         }
         return singles
@@ -367,10 +419,12 @@ class Datastore {
     
     func getSingleCount() -> Int {
         var count = -1
+        guard let db = db else {
+            return count
+        }
+        let table = Table("single")
         do {
-            try dbQueue.read { db in
-                count = try Single.fetchCount(db)
-            }
+            count = try db.scalar(table.count)
         } catch {
         }
         return count
@@ -378,75 +432,98 @@ class Datastore {
 
     func singleExists(_ id: String) throws -> Bool {
         var exists = false
-        try dbQueue.read { db in
-            if let row = try Row.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 from single WHERE id = ?)", arguments: [id]) {
-                exists = (row["EXISTS"] == 1)
-            }
+        guard let db = db else {
+            return exists
         }
+        let table = Table("single")
+        exists = try db.scalar(table.filter(self.id == id).count) == 1
         return exists
     }
     
     func getSingle(_ id: String) throws  -> Single? {
-        var single: Single?
-        try dbQueue.read { db in
-            if let row = try Row.fetchOne(db, sql: "SELECT json FROM single WHERE id = ?", arguments: [id]) {
-
-                single = Single.decodeFrom(json: row["json"])
-            }
+        var single: Single? = nil
+        guard let db = db else {
+            return single
+        }
+        let table = Table("single")
+        for row in try db.prepare(table.select(json).filter(self.id == id)) {
+            single = Single.decodeFrom(json: Data.fromDatatypeValue(row[json]))
+            return single
         }
         return single
     }
     
     func postSingle(_ single: Single) throws -> Transaction {
-        try dbQueue.write { db in
-            try db.execute(
-                sql: """
-                    INSERT INTO single (id, json) VALUES (?, ?)
-                """,
-                arguments: [single.id, single.json])
-            
-            if db.changesCount < 1 {
-                throw Abort(.found)
-            }
-
-            let transaction = Transaction(method: "POST", entity: "single", id: single.id)
-            try transaction.insert(db)
-            return transaction
+        guard let db = db else {
+            throw Abort(.serviceUnavailable)
         }
+        let table = Table("single")
+        let transactionTable = Table("transaction")
+        let transaction = Transaction(method: "POST", entity: "single", id: single.id)
+        if let json = single.json {
+            do {
+                try db.transaction {
+                    try db.run(table.insert(self.id <- single.id, self.json <- json.datatypeValue))
+                    try db.run(transactionTable.insert(
+                        time <- transaction.time,
+                        method <- transaction.method,
+                        entity <- transaction.entity,
+                        id <- transaction.id))
+                }
+            } catch let Result.error(_, code, _) where code == SQLITE_CONSTRAINT {
+                throw Abort(.found)
+            } catch {
+                throw Abort(.serviceUnavailable)
+            }
+        } else {
+            throw Abort(.noContent)
+        }
+        return transaction
     }
     
     func putSingle(_ single: Single) throws -> Transaction {
-        try dbQueue.write { db in
-            try db.execute(
-                sql: """
-                    UPDATE single SET json = ? WHERE id = ?
-                """,
-                arguments: [single.json, single.id])
-            
-            if db.changesCount < 1 {
+        guard let db = db else {
+            throw Abort(.serviceUnavailable)
+        }
+        let table = Table("single")
+        let transactionTable = Table("transaction")
+        let transaction = Transaction(method: "PUT", entity: "single", id: single.id)
+        if let json = single.json {
+            let singleToModify = table.filter(id == single.id)
+            do {
+                try db.transaction {
+                    if try db.run(singleToModify.update(self.json <- json.datatypeValue)) > 0 {
+                        try db.run(transactionTable.insert(
+                            time <- transaction.time,
+                            method <- transaction.method,
+                            entity <- transaction.entity,
+                            id <- transaction.id))
+                    } else {
+                        throw Abort(.notFound)
+                    }
+                }
+            } catch {
                 throw Abort(.notFound)
             }
-
-            let transaction = Transaction(method: "PUT", entity: "single", id: single.id)
-            try transaction.insert(db)
-            return transaction
         }
+        return transaction
     }
 
     func deleteSingle(_ id: String) throws -> Transaction {
         var directory: String?
         var filename: String?
-        var transaction: Transaction?
-        
-        try dbQueue.read { db in
-            if let row = try Row.fetchOne(db, sql: "SELECT json FROM single WHERE id = ?", arguments: [id]) {
-
-                let single = Single.decodeFrom(json: row["json"])
-                directory = single?.directory
-                filename = single?.filename
-            }
+        guard let db = db else {
+            throw Abort(.serviceUnavailable)
         }
-        
+        let table = Table("single")
+        let transactionTable =  Table("transaction")
+        for row in try db.prepare(table.select(json).filter(self.id == id)) {
+            if let single = Single.decodeFrom(json: Data.fromDatatypeValue(row[json])) {
+                directory = single.directory
+                filename = single.filename
+            }
+            break
+        }
         if let directory = directory,
            let filename = filename {
             let fm = FileManager.default
@@ -457,26 +534,23 @@ class Datastore {
             if let contents = try? fm.contentsOfDirectory(atPath: dirURL.path), contents.isEmpty {
                 try? fm.removeItem(at: dirURL)
             }
-        } else {
-            throw Abort(.internalServerError)
         }
-        
-        let _ = try dbQueue.write { db -> Bool in
-            let result = try Single.deleteOne(db, key: id)
-            if !result {
-                throw Abort(.notFound)
+        do {
+            let singleToDelete = table.filter(self.id == id)
+            let transaction = Transaction(method: "DELETE", entity: "single", id: id)
+            try db.transaction {
+                if try db.run(singleToDelete.delete()) > 0 {
+                    try db.run(transactionTable.insert(
+                        time <- transaction.time,
+                        method <- transaction.method,
+                        entity <- transaction.entity,
+                        self.id <- transaction.id))
+                } else {
+                    throw Abort(.notFound)
+                }
             }
-            
-            transaction = Transaction(method: "DELETE", entity: "single", id: id)
-            try transaction?.insert(db)
-            return result
-        }
-        
-        if let transaction = transaction {
             return transaction
         }
-        
-        throw Abort(.internalServerError)
     }
     
     private func getSingleDirectoryURL(_ id: String) -> URL? {
@@ -551,19 +625,19 @@ class Datastore {
     
     func getPlaylists(user: String?, limit: Int, offset: Int, fields: String?) throws -> [Playlist] {
         var playlists: [Playlist] = []
-        try dbQueue.read { db in
-            let rows = try Row.fetchAll(db, sql: "SELECT json FROM playlist WHERE user = ? OR shared = ? LIMIT ? OFFSET ?",
-                                        arguments: [user, true, limit, offset])
-            for row in rows {
-                if var playlist = Playlist.decodeFrom(json: row["json"]) {
-                    if let fields = fields {
-                        let fullPlaylist = playlist
-                        playlist = Playlist(fullPlaylist.title, user: fullPlaylist.user, shared: fullPlaylist.shared)
-                        playlist.id = fullPlaylist.id
-                        playlist.addFields(fields, from: fullPlaylist)
-                    }
-                   playlists.append(playlist)
+        guard let db = db else {
+            return playlists
+        }
+        let table = Table("playlist")
+        for row in try db.prepare(table.select(json).limit(limit, offset: offset)) {
+            if var playlist = Playlist.decodeFrom(json: Data.fromDatatypeValue(row[json])) {
+                if let fields = fields {
+                    let fullSingle = playlist
+                    playlist = Playlist(fullSingle.title)
+                    playlist.id = fullSingle.id
+                    playlist.addFields(fields, from: fullSingle)
                 }
+                playlists.append(playlist)
             }
         }
         return playlists
@@ -571,10 +645,12 @@ class Datastore {
     
     func getPlaylistCount() -> Int {
         var count = -1
+        guard let db = db else {
+            return count
+        }
+        let table = Table("playlist")
         do {
-            try dbQueue.read { db in
-                count = try Playlist.fetchCount(db)
-            }
+            count = try db.scalar(table.count)
         } catch {
         }
         return count
@@ -582,80 +658,116 @@ class Datastore {
     
     func playlistExists(_ id: String) throws -> Bool {
         var exists = false
-        try dbQueue.read { db in
-            if let row = try Row.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 from playlist WHERE id = ?)", arguments: [id]) {
-                exists = (row["EXISTS"] == 1)
-            }
+        guard let db = db else {
+            return exists
         }
+        let table = Table("playlist")
+        exists = try db.scalar(table.filter(self.id == id).count) == 1
         return exists
     }
     
     func getPlaylist(_ id: String) throws -> Playlist?  {
-        var playlist: Playlist?
-        try dbQueue.read { db in
-            if let row = try Row.fetchOne(db, sql: "SELECT json FROM playlist WHERE id = ?", arguments: [id]) {
-
-                playlist = Playlist.decodeFrom(json: row["json"])
-            }
+        var playlist: Playlist? = nil
+        guard let db = db else {
+            return playlist
+        }
+        let table = Table("playlist")
+        for row in try db.prepare(table.select(json).filter(self.id == id)) {
+            playlist = Playlist.decodeFrom(json: Data.fromDatatypeValue(row[json]))
+            return playlist
         }
         return playlist
     }
     
     func postPlaylist(_ playlist: Playlist) throws -> Transaction  {
-        try dbQueue.write { db in
-            try db.execute(
-                sql: """
-                    INSERT INTO playlist (id, user, shared, json) VALUES (?, ?, ?, ?)
-                """,
-                arguments: [playlist.id, playlist.user, playlist.shared, playlist.json])
-
-            if db.changesCount < 1 {
-                throw Abort(.found)
-            }
-            
-            let transaction = Transaction(method: "POST", entity: "playlist", id: playlist.id)
-            try transaction.insert(db)
-            return transaction
+        guard let db = db else {
+            throw Abort(.serviceUnavailable)
         }
-
+        let table = Table("playlist")
+        let transactionTable = Table("transaction")
+        let transaction = Transaction(method: "POST", entity: "playlist", id: playlist.id)
+        if let json = playlist.json {
+            do {
+                try db.transaction {
+                    if let user = playlist.user {
+                        try db.run(table.insert(self.id <- playlist.id, self.user <- user, shared <- playlist.shared, self.json <- json.datatypeValue))
+                    } else {
+                        try db.run(table.insert(self.id <- playlist.id, shared <- playlist.shared, self.json <- json.datatypeValue))
+                    }
+                    try db.run(transactionTable.insert(
+                        time <- transaction.time,
+                        method <- transaction.method,
+                        entity <- transaction.entity,
+                        id <- transaction.id))
+                }
+            } catch let Result.error(a, code, b) where code == SQLITE_CONSTRAINT {
+                print(a)
+                print(b)
+                throw Abort(.found)
+            } catch {
+                throw Abort(.serviceUnavailable)
+            }
+        } else {
+            throw Abort(.noContent)
+        }
+        return transaction
     }
     
     func putPlaylist(_ playlist: Playlist) throws -> Transaction {
-        try dbQueue.write { db in
-            try db.execute(
-                sql: """
-                    UPDATE playlist SET user = ?, shared = ?, json = ? WHERE id = ?
-                """,
-                arguments: [playlist.user, playlist.shared, playlist.json, playlist.id])
-            
-            if db.changesCount < 1 {
+        guard let db = db else {
+            throw Abort(.serviceUnavailable)
+        }
+        let table = Table("playlist")
+        let transactionTable = Table("transaction")
+        let transaction = Transaction(method: "PUT", entity: "playlist", id: playlist.id)
+        if let json = playlist.json {
+            let playlistToModify = table.filter(id == playlist.id)
+            do {
+                try db.transaction {
+                    var count = 0
+                    if let user = playlist.user {
+                        count = try db.run(playlistToModify.update(self.user <- user, shared <- playlist.shared, self.json <- json.datatypeValue))
+                    } else {
+                        count = try db.run(playlistToModify.update(shared <- playlist.shared, self.json <- json.datatypeValue))
+                    }
+                    if count > 0 {
+                        try db.run(transactionTable.insert(
+                            time <- transaction.time,
+                            method <- transaction.method,
+                            entity <- transaction.entity,
+                            id <- transaction.id))
+                    } else {
+                        throw Abort(.notFound)
+                    }
+                }
+            } catch {
                 throw Abort(.notFound)
             }
-
-            let transaction = Transaction(method: "PUT", entity: "playlist", id: playlist.id)
-            try transaction.insert(db)
-            return transaction
         }
+        return transaction
     }
     
     func deletePlaylist(_ id: String) throws -> Transaction {
-        var transaction: Transaction?
-        
-        let _ = try dbQueue.write { db -> Bool in
-            let result = try Playlist.deleteOne(db, key: id)
-            if !result {
-                throw Abort(.internalServerError)
-            }
-                
-            transaction = Transaction(method: "DELETE", entity: "playlist", id: id)
-            try transaction?.insert(db)
-            return result
+        guard let db = db else {
+            throw Abort(.serviceUnavailable)
         }
-        
-        if let transaction = transaction {
+        let table = Table("playlist")
+        let transactionTable = Table("transaction")
+        do {
+            let playlistToDelete = table.filter(self.id == id)
+            let transaction = Transaction(method: "DELETE", entity: "playlist", id: id)
+            try db.transaction {
+                if try db.run(playlistToDelete.delete()) > 0 {
+                    try db.run(transactionTable.insert(
+                        time <- transaction.time,
+                        method <- transaction.method,
+                        entity <- transaction.entity,
+                        self.id <- transaction.id))
+                } else {
+                    throw Abort(.notFound)
+                }
+            }
             return transaction
         }
-
-        throw Abort(.notFound)
     }
 }
