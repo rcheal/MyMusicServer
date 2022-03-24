@@ -11,7 +11,7 @@ let package = Package(
         .package(url: "https://github.com/vapor/vapor.git", from: "4.0.0"),
         .package(
             name: "MusicMetadata",
-            url: "file:///Users/bob/Developer/MyMusic/MusicMetadata",
+            url: "https://github.com/rcheal/MusicMetadata.git",
             from: "1.0.0"),
         .package(
             name: "SQLite",
