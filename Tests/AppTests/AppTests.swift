@@ -25,14 +25,14 @@ struct Resource {
 final class AppTests: XCTestCase {
     
     override func setUpWithError() throws {
-        Datastore.sharedInstance = nil
-        let ds = Datastore.create(memory: true)
-        
-        let musicDir = ds.fileRootURL.path
-        let fm = FileManager()
-        if fm.fileExists(atPath: musicDir) {
-            try! fm.removeItem(atPath: musicDir)
-        }
+//        Datastore.sharedInstance = nil
+//        let ds = Datastore.create(memory: true)
+//        
+//        let musicDir = ds.fileRootURL.path
+//        let fm = FileManager()
+//        if fm.fileExists(atPath: musicDir) {
+//            try! fm.removeItem(atPath: musicDir)
+//        }
     }
 
     func createMixedAlbum() -> Album {
@@ -274,7 +274,7 @@ final class AppTests: XCTestCase {
             
             XCTAssertEqual(serverStatus.version,myMusicServerVersion)
             XCTAssertEqual(serverStatus.apiVersions,myMusicApiVersions)
-            XCTAssertEqual(serverStatus.name, "Robert’s iMac")
+            XCTAssertEqual(serverStatus.name, "Robert’s Mac Studio")
             XCTAssertEqual(serverStatus.address, "127.0.0.1:8888")
             XCTAssertEqual(serverStatus.albumCount, 2)
             XCTAssertEqual(serverStatus.singleCount, 2)
@@ -327,7 +327,11 @@ final class AppTests: XCTestCase {
         let app = Application(.testing)
         defer { app.shutdown() }
         try configure(app)
-        
+
+
+        if let jsonp = album.jsonp {
+            print(String(decoding: jsonp, as: UTF8.self))
+        }
         let albumBuf = ByteBuffer(data: album.json ?? Data())
         let newAlbumBuf = ByteBuffer(data: newAlbum.json ?? Data())
         
