@@ -95,18 +95,17 @@ class Datastore {
     
     // MARK: Album functions
     
-    func getAlbums(limit: Int, offset: Int, fields: String?) throws -> [Album] {
+    func getAlbums(limit: Int, offset: Int, fields: String?) async throws -> [Album] {
         var albums: [Album] = []
         guard let db = Self.db else {
             return albums
         }
 
         do {
-            albums = try AlbumModel.query(on: db)
+            albums = try await AlbumModel.query(on: db)
                 .offset(offset)
                 .limit(limit)
                 .all()
-                .wait()
                 .compactMap { model -> Album? in
                     if var album = Album.decodeFrom(json: model.json) {
                         if let fields = fields {
@@ -140,17 +139,14 @@ class Datastore {
         return count
     }
 
-    func albumExists(_ id: String) throws -> Bool {
+    func albumExists(_ id: String) async throws -> Bool {
         var exists = false
         guard let db = Self.db else {
             return exists
         }
-        do {
-            if let uuid = UUID(uuidString: id) {
-                exists = try AlbumModel.query(on: db)
-                    .filter(\.$id == uuid)
-                    .count()
-                    .wait() > 0
+        if let uuid = UUID(uuidString: id) {
+            do {
+                exists = try await AlbumModel.find(uuid, on: db) != nil
             }
         }
         return exists
@@ -173,10 +169,7 @@ class Datastore {
         }
         if let uuid = UUID(uuidString: id) {
             do {
-                if let model = try await AlbumModel.query(on: db)
-                    .filter(\.$id == uuid)
-                    .first()
-                {
+                if let model = try await AlbumModel.find(uuid, on: db) {
                     if let album = Album.decodeFrom(json: model.json) {
                         return album
                     }
@@ -192,10 +185,8 @@ class Datastore {
     /**
      Insert new album into the database
      
-     Insert album into album and albumListItem tables
-     Insert singles contained in album into singleListItem table
-     Insert compositions contained in album into compositionListItem table
-     
+     Insert album into albums table
+
      - parameter album: album to be inserted into database
      
      - throws: Database exceptions
@@ -211,8 +202,10 @@ class Datastore {
                 let albumModel = AlbumModel(id: UUID(uuidString: album.id), json: json)
                 let transactionModel = TransactionModel(transaction: transaction)
 
-                try await albumModel.create(on: db)
-                try await transactionModel.create(on: db)
+                try await db.transaction { database in
+                    try await albumModel.create(on: database)
+                    try await transactionModel.create(on: database)
+                }
 
             }
         } else {
@@ -250,7 +243,7 @@ class Datastore {
                     throw Abort(.conflict)
                 }
             } else {
-                throw Abort(.noContent)
+                throw Abort(.notFound)
             }
         }
         return transaction
@@ -259,64 +252,55 @@ class Datastore {
     /**
      Delete specified album
      
-     Deletes all records from database associated with id.  This includes
-     records in the album. albumListItem, compositionListItem and singleListItem tables.
+     Deletes row with matching id from albums.
      Also deletes the directory containing the albums audiofiles and artwork.
      
      - paramter id: Unique id of album to be deleted
      
-     - throws: Database or filesystem errors.  There is no error if the album does not exist.
+     - throws: Database or filesystem errors.
      */
     func deleteAlbum(_ id: String) async throws -> Transaction {
+        var albumModel: AlbumModel?
+
         guard let db = Self.db else {
             throw Abort(.serviceUnavailable)
         }
 
-        print("In deleteAlbum")
         let transaction = Transaction(method: "DELETE", entity: "album", id: id)
 
-        if let album = try await getAlbum(id) {
+        do {
+            albumModel = try await AlbumModel.find(UUID(uuidString: id), on: db)
+        } catch {
+            throw Abort(.notFound)
+        }
+
+        if let albumModel = albumModel {
 
             do {
-                if let albumDir = album.directory {
-                    let fm = FileManager.default
+                if let album = Album.decodeFrom(json: albumModel.json) {
+                    if let albumDir = album.directory {
+                        let fm = FileManager.default
 
-                    let dirURL = fileRootURL.appendingPathComponent(albumDir)
-                    try? fm.removeItem(at: dirURL)
-                }
+                        let dirURL = fileRootURL.appendingPathComponent(albumDir)
+                        try? fm.removeItem(at: dirURL)
+                    }
 
-                if let json = album.json {
-                    let albumModel = AlbumModel(id: UUID(uuidString: album.id), json: json)
                     let transactionModel = TransactionModel(transaction: transaction)
 
-                    try await albumModel.delete(on: db)
-                    try await transactionModel.create(on: db)
+                    try await db.transaction { database in
+                        try await albumModel.delete(on: database)
+                        try await transactionModel.create(on: database)
+                    }
                     return transaction
                 }
                 throw Abort(.notFound)
             } catch {
+                print(error)
                 throw Abort(.conflict)
             }
-        } else {
-            throw Abort(.notFound)
         }
+        throw Abort(.notFound)
 
-//            try awa
-//            let albumToDelete = table.filter(self.id == id)
-//            let transaction = Transaction(method: "DELETE", entity: "album", id: id)
-//            try db.transaction {
-//                if try db.run(albumToDelete.delete()) > 0 {
-//                    try db.run(transactionTable.insert(
-//                        time <- transaction.time,
-//                        method <- transaction.method,
-//                        entity <- transaction.entity,
-//                        self.id <- transaction.id))
-//                } else {
-//                    throw Abort(.notFound)
-//                }
-//            }
-//            return transaction
-//        }
     }
     
     private func getAlbumDirectoryURL(_ id: String) async throws -> URL? {
@@ -332,8 +316,8 @@ class Datastore {
     }
     
     func getAlbumFilePath(_ id: String, filename: String) async throws -> String? {
-        if let albumURL = try await getAlbumDirectoryURL(id) {
-            return albumURL.appendingPathComponent(filename).path
+        if let albumDirectoryURL = try await getAlbumDirectoryURL(id) {
+            return albumDirectoryURL.appendingPathComponent(filename).path
         }
         return nil
     }
@@ -389,18 +373,17 @@ class Datastore {
     
     // MARK: Single functions
 
-    func getSingles(limit: Int, offset: Int, fields: String?) throws -> [Single] {
+    func getSingles(limit: Int, offset: Int, fields: String?) async throws -> [Single] {
         var singles: [Single] = []
         guard let db = Self.db else {
             return singles
         }
 
         do {
-            singles = try SingleModel.query(on: db)
+            singles = try await SingleModel.query(on: db)
                 .offset(offset)
                 .limit(limit)
                 .all()
-                .wait()
                 .compactMap { model -> Single? in
                     if var single = Single.decodeFrom(json: model.json) {
                         if let fields = fields {
@@ -419,72 +402,95 @@ class Datastore {
         return singles
     }
     
-    func getSingleCount() -> Int {
+    func getSingleCount() async throws -> Int {
         var count = -1
         guard let db = Self.db else {
             return count
         }
 
         do {
-            count = try SingleModel.query(on: db)
+            count = try await SingleModel.query(on: db)
                 .count()
-                .wait()
         } catch {
 
         }
         return count
     }
 
-    func singleExists(_ id: String) throws -> Bool {
+    func singleExists(_ id: String) async throws -> Bool {
         var exists = false
         guard let db = Self.db else {
             return exists
         }
 
-        do {
-            if let uuid = UUID(uuidString: id) {
-                exists = try SingleModel.query(on: db)
-                    .filter(\.$id == uuid)
-                    .count()
-                    .wait() > 0
+        if let uuid = UUID(uuidString: id) {
+            do {
+                exists = try await SingleModel.find(uuid, on: db) != nil
             }
         }
         return exists
     }
     
-    func getSingle(_ id: String) throws  -> Single? {
+    /**
+     Retrieves an single from the database
+
+     The return value contains all metadata.  References to audio files
+     are included, but the files themselves must be retrieved separately via getAudiofile(...)
+
+     - paramter id: Unique identifier of single to retrieve
+
+     - returns: Single?
+     */
+    func getSingle(_ id: String) async throws  -> Single? {
         guard let db = Self.db else {
             return nil
         }
 
         if let uuid = UUID(uuidString: id) {
-            if let model = try SingleModel.query(on: db)
-                .filter(\.$id == uuid)
-                .first()
-                .wait() {
-                if let single = Single.decodeFrom(json: model.json) {
-                    return single
+            do {
+                if let model = try await SingleModel.find(uuid, on: db) {
+                    if let single = Single.decodeFrom(json: model.json) {
+                        return single
+                    }
                 }
+            } catch {
+                throw Abort(.notFound)
             }
         }
         return nil
     }
     
-    func postSingle(_ single: Single) throws -> Transaction {
+    /**
+     Insert new single into the database
+
+     Insert single into singles table
+
+     - parameter single: single to be inserted into database
+
+     - throws: Database exceptions
+     */
+    func postSingle(_ single: Single) async throws -> Transaction {
         guard let db = Self.db else {
             throw Abort(.serviceUnavailable)
         }
 
         let transaction = Transaction(method: "POST", entity: "single", id: single.id)
-        if let json = single.json {
+        if let json = single.json,
+           let uuid = UUID(uuidString: single.id) {
+            if try await SingleModel.find(uuid, on: db) != nil {
+                throw Abort(.conflict)
+            }
             do {
-                let singleModel = SingleModel(id: UUID(uuidString: single.id), json: json)
+                let singleModel = SingleModel(id: uuid, json: json)
                 let transactionModel = TransactionModel(transaction: transaction)
-                try singleModel.create(on: db)
-                    .wait()
 
-                try transactionModel.create(on: db)
-                    .wait()
+                try await db.transaction { database in
+                    try await singleModel.create(on: database)
+                    try await transactionModel.create(on: database)
+                }
+            } catch {
+                print(error)
+                throw Abort(.internalServerError)
             }
         } else {
             throw Abort(.noContent)
@@ -493,83 +499,94 @@ class Datastore {
         return transaction
     }
     
-    func putSingle(_ single: Single) throws -> Transaction {
-//        guard let db = Self.db else {
-//            throw Abort(.serviceUnavailable)
-//        }
-//        let table = Table("single")
-//        let transactionTable = Table("transaction")
-//        let transaction = Transaction(method: "PUT", entity: "single", id: single.id)
-//        if let json = single.json {
-//            let singleToModify = table.filter(id == single.id)
-//            do {
-//                try db.transaction {
-//                    if try db.run(singleToModify.update(self.json <- json.datatypeValue)) > 0 {
-//                        try db.run(transactionTable.insert(
-//                            time <- transaction.time,
-//                            method <- transaction.method,
-//                            entity <- transaction.entity,
-//                            id <- transaction.id))
-//                    } else {
-//                        throw Abort(.notFound)
-//                    }
-//                }
-//            } catch {
-//                throw Abort(.notFound)
-//            }
-//        }
-//        return transaction
-        throw  Abort(.notImplemented)
+    func putSingle(_ single: Single) async throws -> Transaction {
+        guard let db = Self.db else {
+            throw Abort(.serviceUnavailable)
+        }
+
+        let transaction = Transaction(method: "PUT", entity: "single", id: single.id)
+        if let json = single.json {
+            var singleModel: SingleModel?
+            do {
+                singleModel = try await SingleModel.find(UUID(uuidString: single.id), on: db)
+            } catch {
+                throw Abort(.notFound)
+            }
+
+            if let singleModel = singleModel {
+                singleModel.json = json
+                do {
+                    let transactionModel = TransactionModel(transaction: transaction)
+                    try await db.transaction { database in
+                        try await singleModel.update(on: database)
+                        try await transactionModel.create(on: database)
+                    }
+                } catch {
+                    let myError = error as Error
+                    print(myError)
+                    throw Abort(.conflict)
+                }
+            } else {
+                throw Abort(.notFound)
+            }
+        }
+        return transaction
     }
 
-    func deleteSingle(_ id: String) throws -> Transaction {
-//        var directory: String?
-//        var filename: String?
-//        guard let db = db else {
-//            throw Abort(.serviceUnavailable)
-//        }
-//        let table = Table("single")
-//        let transactionTable =  Table("transaction")
-//        for row in try db.prepare(table.select(json).filter(self.id == id)) {
-//            if let single = Single.decodeFrom(json: Data.fromDatatypeValue(row[json])) {
-//                directory = single.directory
-//                filename = single.filename
-//            }
-//            break
-//        }
-//        if let directory = directory,
-//           let filename = filename {
-//            let fm = FileManager.default
-//
-//            let dirURL = fileRootURL.appendingPathComponent(directory)
-//            let fileURL = dirURL.appendingPathComponent(filename)
-//            try? fm.removeItem(at: fileURL)
-//            if let contents = try? fm.contentsOfDirectory(atPath: dirURL.path), contents.isEmpty {
-//                try? fm.removeItem(at: dirURL)
-//            }
-//        }
-//        do {
-//            let singleToDelete = table.filter(self.id == id)
-//            let transaction = Transaction(method: "DELETE", entity: "single", id: id)
-//            try db.transaction {
-//                if try db.run(singleToDelete.delete()) > 0 {
-//                    try db.run(transactionTable.insert(
-//                        time <- transaction.time,
-//                        method <- transaction.method,
-//                        entity <- transaction.entity,
-//                        self.id <- transaction.id))
-//                } else {
-//                    throw Abort(.notFound)
-//                }
-//            }
-//            return transaction
-//        }
-        throw Abort(.notImplemented)
+    /**
+     Delete specified single
+
+     Deletes row with matching id from singles.
+     Also deletes the directory containing the albums audiofiles.
+
+     - paramter id: Unique id of single to be deleted
+
+     - throws: Database or filesystem errors.
+     */
+    func deleteSingle(_ id: String) async throws -> Transaction {
+        var singleModel: SingleModel?
+
+        guard let db = Self.db else {
+            throw Abort(.serviceUnavailable)
+        }
+
+        let transaction = Transaction(method: "DELETE", entity: "single", id: id)
+
+        do {
+            singleModel = try await SingleModel.find(UUID(uuidString: id), on: db)
+        } catch {
+            throw Abort(.notFound)
+        }
+
+        if let singleModel = singleModel {
+            do {
+                if let single = Single.decodeFrom(json: singleModel.json) {
+                    if let singleDir = single.directory {
+                        let fm = FileManager.default
+
+                        let dirURL = fileRootURL.appendingPathComponent(singleDir)
+                        try? fm.removeItem(at: dirURL)
+                    }
+
+                    let transactionModel = TransactionModel(transaction: transaction)
+
+                    try await db.transaction { database in
+                        try await singleModel.delete(on: database)
+                        try await transactionModel.delete(on: database)
+                    }
+                    return transaction
+                }
+                throw Abort(.internalServerError)
+            } catch {
+                throw Abort(.conflict)
+            }
+        }
+        throw Abort(.notFound)
     }
     
-    private func getSingleDirectoryURL(_ id: String) -> URL? {
+    private func getSingleDirectoryURL(_ id: String) async throws -> URL? {
         do {
-            if let single = try getSingle(id),
+            if let single = try await getSingle(id),
                let directory = single.directory {
                 return fileRootURL.appendingPathComponent(directory)
             }
@@ -579,15 +596,15 @@ class Datastore {
         }
     }
     
-    func getSingleFilePath(_ id: String, filename: String) -> String? {
-        if let singleDirectoryURL = getSingleDirectoryURL(id) {
+    func getSingleFilePath(_ id: String, filename: String) async throws -> String? {
+        if let singleDirectoryURL = try await getSingleDirectoryURL(id) {
             return singleDirectoryURL.appendingPathComponent(filename).path
         }
         return nil
     }
     
-    func getSingleFile(_ id: String, filename: String) -> Data? {
-        if let singleDirectoryURL = getSingleDirectoryURL(id) {
+    func getSingleFile(_ id: String, filename: String) async throws -> Data? {
+        if let singleDirectoryURL = try await getSingleDirectoryURL(id) {
             let fileURL = singleDirectoryURL.appendingPathComponent(filename)
 
             let fm = FileManager.default
@@ -596,8 +613,8 @@ class Datastore {
         return nil
     }
     
-    func postSingleFile(_ id: String, filename: String, data: Data) throws {
-        if let singleDirectoryURL = getSingleDirectoryURL(id) {
+    func postSingleFile(_ id: String, filename: String, data: Data) async throws {
+        if let singleDirectoryURL = try await getSingleDirectoryURL(id) {
             let fileURL = singleDirectoryURL.appendingPathComponent(filename)
             let fm = FileManager.default
             if !fm.fileExists(atPath: singleDirectoryURL.path) {
@@ -611,8 +628,8 @@ class Datastore {
         }
     }
     
-    func putSingleFile(_ id: String, filename: String, data: Data) throws {
-        if let singleDirectoryURL = getSingleDirectoryURL(id) {
+    func putSingleFile(_ id: String, filename: String, data: Data) async throws {
+        if let singleDirectoryURL = try await getSingleDirectoryURL(id) {
             let fileURL = singleDirectoryURL.appendingPathComponent(filename)
             let fm = FileManager.default
             if fm.fileExists(atPath: fileURL.path) {
@@ -623,8 +640,8 @@ class Datastore {
         }
     }
         
-    func deleteSingleFile(_ id: String, filename: String) throws {
-        if let singleDirectoryURL = getSingleDirectoryURL(id) {
+    func deleteSingleFile(_ id: String, filename: String) async throws {
+        if let singleDirectoryURL = try await getSingleDirectoryURL(id) {
             let fileURL = singleDirectoryURL.appendingPathComponent(filename)
             let fm = FileManager.default
             if fm.fileExists(atPath: fileURL.path) {
@@ -637,37 +654,45 @@ class Datastore {
     
     // MARK: Playlist functions
     
-    func getPlaylists(user: String?, limit: Int, offset: Int, fields: String?) throws -> [Playlist] {
-//        var playlists: [Playlist] = []
-//        guard let db = db else {
-//            return playlists
-//        }
-//        let table = Table("playlist")
-//        for row in try db.prepare(table.select(json).limit(limit, offset: offset)) {
-//            if var playlist = Playlist.decodeFrom(json: Data.fromDatatypeValue(row[json])) {
-//                if let fields = fields {
-//                    let fullSingle = playlist
-//                    playlist = Playlist(fullSingle.title)
-//                    playlist.id = fullSingle.id
-//                    playlist.addFields(fields, from: fullSingle)
-//                }
-//                playlists.append(playlist)
-//            }
-//        }
-//        return playlists
-        throw Abort(.notImplemented)
+    func getPlaylists(user: String?, limit: Int, offset: Int, fields: String?) async throws -> [Playlist] {
+        var playlists: [Playlist] = []
+        guard let db = Self.db else {
+            return playlists
+        }
+
+        do {
+            playlists = try await PlaylistModel.query(on: db)
+                .filter(\.$user == user)
+                .offset(offset)
+                .limit(limit)
+                .all()
+                .compactMap { model -> Playlist? in
+                    if var playlist = Playlist.decodeFrom(json: model.json) {
+                        if let fields = fields {
+                            let fullPlaylist = playlist
+                            playlist = Playlist(fullPlaylist.title)
+                            playlist.id = fullPlaylist.id
+                            playlist.addFields(fields, from: fullPlaylist)
+                        }
+                        return playlist
+                    }
+                    return nil
+                }
+        } catch {
+
+        }
+        return playlists
     }
     
-    func getPlaylistCount() -> Int {
+    func getPlaylistCount() async throws -> Int {
         var count = -1
         guard let db = Self.db else {
             return count
         }
 
         do {
-            count = try PlaylistModel.query(on: db)
+            count = try await PlaylistModel.query(on: db)
                 .count()
-                .wait()
         } catch {
 
         }
@@ -690,112 +715,145 @@ class Datastore {
         return exists
     }
     
-    func getPlaylist(_ id: String) throws -> Playlist?  {
-//        var playlist: Playlist? = nil
-//        guard let db = db else {
-//            return playlist
-//        }
-//        let table = Table("playlist")
-//        for row in try db.prepare(table.select(json).filter(self.id == id)) {
-//            playlist = Playlist.decodeFrom(json: Data.fromDatatypeValue(row[json]))
-//            return playlist
-//        }
-//        return playlist
-        throw Abort(.notImplemented)
+    /**
+     Retrieves an playlist from the database
+
+     The return value contains the playlist.
+
+     - paramter id: Unique identifier of playlist to retrieve
+
+     - returns: Playlist?
+     */
+    func getPlaylist(_ id: String) async throws  -> Playlist? {
+        guard let db = Self.db else {
+            return nil
+        }
+
+        if let uuid = UUID(uuidString: id) {
+            do {
+                if let model = try await PlaylistModel.find(uuid, on: db) {
+                    if let playlist = Playlist.decodeFrom(json: model.json) {
+                        return playlist
+                    }
+                }
+            } catch {
+                throw Abort(.notFound)
+            }
+        }
+        return nil
     }
-    
-    func postPlaylist(_ playlist: Playlist) throws -> Transaction  {
-//        guard let db = db else {
-//            throw Abort(.serviceUnavailable)
-//        }
-//        let table = Table("playlist")
-//        let transactionTable = Table("transaction")
-//        let transaction = Transaction(method: "POST", entity: "playlist", id: playlist.id)
-//        if let json = playlist.json {
-//            do {
-//                try db.transaction {
-//                    if let user = playlist.user {
-//                        try db.run(table.insert(self.id <- playlist.id, self.user <- user, shared <- playlist.shared, self.json <- json.datatypeValue))
-//                    } else {
-//                        try db.run(table.insert(self.id <- playlist.id, shared <- playlist.shared, self.json <- json.datatypeValue))
-//                    }
-//                    try db.run(transactionTable.insert(
-//                        time <- transaction.time,
-//                        method <- transaction.method,
-//                        entity <- transaction.entity,
-//                        id <- transaction.id))
-//                }
-//            } catch let Result.error(a, code, b) where code == SQLITE_CONSTRAINT {
-//                print(a)
-//                print(b)
-//                throw Abort(.found)
-//            } catch {
-//                throw Abort(.serviceUnavailable)
-//            }
-//        } else {
-//            throw Abort(.noContent)
-//        }
-//        return transaction
-        throw Abort(.notImplemented)
+
+    /**
+     Insert new playlist into the database
+
+     Insert playlist into playlists table
+
+     - parameter playlist: playlist to be inserted into database
+
+     - throws: Database exceptions
+     */
+    func postPlaylist(_ playlist: Playlist) async throws -> Transaction {
+        guard let db = Self.db else {
+            throw Abort(.serviceUnavailable)
+        }
+
+        let transaction = Transaction(method: "POST", entity: "playlist", id: playlist.id)
+        if let json = playlist.json,
+           let uuid = UUID(uuidString: playlist.id) {
+            if try await PlaylistModel.find(uuid, on: db) != nil {
+                throw Abort(.conflict)
+            }
+            do {
+                let playlistModel = PlaylistModel(id: uuid, json: json)
+                let transactionModel = TransactionModel(transaction: transaction)
+
+                try await db.transaction { database in
+                    try await playlistModel.create(on: database)
+                    try await transactionModel.create(on: database)
+                }
+            } catch {
+                print(error)
+                throw Abort(.internalServerError)
+            }
+        } else {
+            throw Abort(.noContent)
+        }
+
+        return transaction
     }
-    
-    func putPlaylist(_ playlist: Playlist) throws -> Transaction {
-//        guard let db = db else {
-//            throw Abort(.serviceUnavailable)
-//        }
-//        let table = Table("playlist")
-//        let transactionTable = Table("transaction")
-//        let transaction = Transaction(method: "PUT", entity: "playlist", id: playlist.id)
-//        if let json = playlist.json {
-//            let playlistToModify = table.filter(id == playlist.id)
-//            do {
-//                try db.transaction {
-//                    var count = 0
-//                    if let user = playlist.user {
-//                        count = try db.run(playlistToModify.update(self.user <- user, shared <- playlist.shared, self.json <- json.datatypeValue))
-//                    } else {
-//                        count = try db.run(playlistToModify.update(shared <- playlist.shared, self.json <- json.datatypeValue))
-//                    }
-//                    if count > 0 {
-//                        try db.run(transactionTable.insert(
-//                            time <- transaction.time,
-//                            method <- transaction.method,
-//                            entity <- transaction.entity,
-//                            id <- transaction.id))
-//                    } else {
-//                        throw Abort(.notFound)
-//                    }
-//                }
-//            } catch {
-//                throw Abort(.notFound)
-//            }
-//        }
-//        return transaction
-        throw Abort(.notImplemented)
+
+    func putPlaylist(_ playlist: Playlist) async throws -> Transaction {
+        guard let db = Self.db else {
+            throw Abort(.serviceUnavailable)
+        }
+
+        let transaction = Transaction(method: "PUT", entity: "playlist", id: playlist.id)
+        if let json = playlist.json {
+            var playlistModel: PlaylistModel?
+            do {
+                playlistModel = try await PlaylistModel.find(UUID(uuidString: playlist.id), on: db)
+            } catch {
+                throw Abort(.notFound)
+            }
+
+            if let playlistModel = playlistModel {
+                playlistModel.json = json
+                do {
+                    let transactionModel = TransactionModel(transaction: transaction)
+                    try await db.transaction { database in
+                        try await playlistModel.update(on: database)
+                        try await transactionModel.create(on: database)
+                    }
+                } catch {
+                    let myError = error as Error
+                    print(myError)
+                    throw Abort(.conflict)
+                }
+            } else {
+                throw Abort(.notFound)
+            }
+        }
+        return transaction
     }
-    
-    func deletePlaylist(_ id: String) throws -> Transaction {
-//        guard let db = db else {
-//            throw Abort(.serviceUnavailable)
-//        }
-//        let table = Table("playlist")
-//        let transactionTable = Table("transaction")
-//        do {
-//            let playlistToDelete = table.filter(self.id == id)
-//            let transaction = Transaction(method: "DELETE", entity: "playlist", id: id)
-//            try db.transaction {
-//                if try db.run(playlistToDelete.delete()) > 0 {
-//                    try db.run(transactionTable.insert(
-//                        time <- transaction.time,
-//                        method <- transaction.method,
-//                        entity <- transaction.entity,
-//                        self.id <- transaction.id))
-//                } else {
-//                    throw Abort(.notFound)
-//                }
-//            }
-//            return transaction
-//        }
-        throw Abort(.notImplemented)
+
+    /**
+     Delete specified single
+
+     Deletes row with matching id from singles.
+     Also deletes the directory containing the albums audiofiles.
+
+     - paramter id: Unique id of single to be deleted
+
+     - throws: Database or filesystem errors.
+     */
+    func deletePlaylist(_ id: String) async throws -> Transaction {
+        var playlistModel: PlaylistModel?
+
+        guard let db = Self.db else {
+            throw Abort(.serviceUnavailable)
+        }
+
+        let transaction = Transaction(method: "DELETE", entity: "playlist", id: id)
+
+        do {
+            playlistModel = try await PlaylistModel.find(UUID(uuidString: id), on: db)
+        } catch {
+            throw Abort(.notFound)
+        }
+
+        if let playlistModel = playlistModel {
+            do {
+                let transactionModel = TransactionModel(transaction: transaction)
+
+                try await db.transaction { database in
+                    try await playlistModel.delete(on: database)
+                    try await transactionModel.delete(on: database)
+                }
+                return transaction
+            } catch {
+                throw Abort(.conflict)
+            }
+        }
+        throw Abort(.notFound)
     }
 }

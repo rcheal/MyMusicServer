@@ -28,7 +28,7 @@ public func configure(_ app: Application) throws {
     // uncomment to serve files from /Public folder
     // app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
 
-    let subDirectory = isMemory ? "MyMusicPiServerMemoryFiles" : "MyMusicPiServerFiles"
+    let subDirectory = isMemory ? "MyMusicPiServerMemoryFiles" : "MyMusicServerFiles"
     let homeURL = FileManager.default.homeDirectoryForCurrentUser
     let baseURL = homeURL.appendingPathComponent(subDirectory)
     Datastore.baseURL = baseURL
@@ -41,11 +41,11 @@ public func configure(_ app: Application) throws {
     if isMemory {
         app.databases.use(.sqlite(.memory), as: .sqlite)
     } else {
-        let dbURL = baseURL.appendingPathComponent("MyMusic.sqlite")
-        app.databases.use(.sqlite(.file(dbURL.path)), as: .sqlite)
+        app.databases.use(.sqlite(.file("MyMusicPi.sqlite")), as: .sqlite)
     }
     
     Datastore.db = app.db
+    let _ = Datastore.create(memory: isMemory)
 
     app.migrations.add(CreateMyMusicDB())
     let _ = app.autoMigrate()

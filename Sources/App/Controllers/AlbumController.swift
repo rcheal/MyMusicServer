@@ -32,11 +32,12 @@ struct AlbumController: RouteCollection {
 
     // GET /albums
     private func getAlbums(req: Request) async throws -> APIAlbums {
+        let ds = Datastore.shared()
         let params = try req.query.decode(ListParams.self)
         let limit = params.limit ?? 10
         let offset = params.offset ?? 0
-        let albums = try Datastore.sharedInstance!.getAlbums(limit: limit, offset: offset, fields: params.fields)
-        let albumCount = try await Datastore.sharedInstance!.getAlbumCount()
+        let albums = try await ds.getAlbums(limit: limit, offset: offset, fields: params.fields)
+        let albumCount = try await ds.getAlbumCount()
         let metadata = APIMetadata(totalCount: albumCount, limit: limit, offset: offset)
         return APIAlbums(albums: albums, _metadata: metadata)
     }
@@ -47,7 +48,7 @@ struct AlbumController: RouteCollection {
     private func getAlbumFile(req: Request) async throws -> Response {
         if let id = req.parameters.get("id"),
            let filename = req.parameters.get("filename") {
-            if let path = try await Datastore.sharedInstance!.getAlbumFilePath(id, filename: filename) {
+            if let path = try await Datastore.shared().getAlbumFilePath(id, filename: filename) {
                 return req.fileio.streamFile(at: path)
             }
         }
@@ -60,7 +61,7 @@ struct AlbumController: RouteCollection {
            let filename = req.parameters.get("filename") {
             if let value = req.body.data {
                 let data = Data(buffer: value)
-                try await Datastore.sharedInstance!.postAlbumFile(id, filename: filename, data: data)
+                try await Datastore.shared().postAlbumFile(id, filename: filename, data: data)
                 return HTTPResponseStatus.ok
             }
             return HTTPResponseStatus.noContent
@@ -75,7 +76,7 @@ struct AlbumController: RouteCollection {
            let filename = req.parameters.get("filename") {
             if let value = req.body.data {
                 let data = Data(buffer: value)
-                try await Datastore.sharedInstance!.putAlbumFile(id, filename: filename, data: data)
+                try await Datastore.shared().putAlbumFile(id, filename: filename, data: data)
                 return HTTPResponseStatus.ok
             }
             return HTTPResponseStatus.noContent
@@ -87,7 +88,7 @@ struct AlbumController: RouteCollection {
     private func deleteAlbumFile(req: Request) async throws -> HTTPResponseStatus {
         if let id = req.parameters.get("id"),
            let filename = req.parameters.get("filename") {
-            try await Datastore.sharedInstance!.deleteAlbumFile(id, filename: filename)
+            try await Datastore.shared().deleteAlbumFile(id, filename: filename)
             return HTTPResponseStatus.ok
         }
         return HTTPResponseStatus.badRequest
@@ -95,9 +96,9 @@ struct AlbumController: RouteCollection {
 
     // MARK: - Album methods
     // HEAD /albums/:id
-    private func headAlbum(req: Request) throws -> HTTPResponseStatus {
+    private func headAlbum(req: Request) async throws -> HTTPResponseStatus {
         if let id = req.parameters.get("id") {
-            if try Datastore.sharedInstance!.albumExists(id) {
+            if try await Datastore.shared().albumExists(id) {
                 return(.ok)
             } else {
                 return(.notFound)
@@ -109,7 +110,7 @@ struct AlbumController: RouteCollection {
     // GET /albums/:id
     private func getAlbum(req: Request) async throws -> Album {
         if let id = req.parameters.get("id") {
-            if let album = try await Datastore.sharedInstance!.getAlbum(id) {
+            if let album = try await Datastore.shared().getAlbum(id) {
                 return album
             }
         }
@@ -128,7 +129,7 @@ struct AlbumController: RouteCollection {
         }
 
         do {
-            return try await Datastore.sharedInstance!.postAlbum(album)
+            return try await Datastore.shared().postAlbum(album)
 
         } catch {
             throw Abort(.conflict)
@@ -145,14 +146,14 @@ struct AlbumController: RouteCollection {
             throw Abort(.conflict)
         }
 
-        return try await Datastore.sharedInstance!.putAlbum(album)
+        return try await Datastore.shared().putAlbum(album)
     }
 
     // DELETE /albums/:id
     private func deleteAlbum(req: Request) async throws -> Transaction {
         let id = req.parameters.get("id")!
 
-        return try await Datastore.sharedInstance!.deleteAlbum(id)
+        return try await Datastore.shared().deleteAlbum(id)
     }
 
 }

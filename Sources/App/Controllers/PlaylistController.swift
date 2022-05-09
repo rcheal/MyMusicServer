@@ -28,7 +28,7 @@ struct PlaylistController: RouteCollection {
     // MARK: - Route Handlers
 
     // GET /playlists
-    private func getPlaylists(req: Request) throws -> APIPlaylists {
+    private func getPlaylists(req: Request) async throws -> APIPlaylists {
         let ds = Datastore.shared()
         let auth = try req.query.decode(UserParams.self)
         let user = auth.user
@@ -36,8 +36,8 @@ struct PlaylistController: RouteCollection {
         let fields = query.fields
         let offset = query.offset ?? 0
         let limit = query.limit ?? 10
-        let playlists = try ds.getPlaylists(user: user, limit: limit, offset: offset, fields: fields)
-        let count = ds.getPlaylistCount()
+        let playlists = try await ds.getPlaylists(user: user, limit: limit, offset: offset, fields: fields)
+        let count = try await ds.getPlaylistCount()
         let metadata = APIMetadata(totalCount: count, limit: limit, offset: offset)
         return APIPlaylists(playlists: playlists, _metadata: metadata)
     }
@@ -56,10 +56,10 @@ struct PlaylistController: RouteCollection {
     }
 
     // GET /playlists/:id
-    private func getPlaylist(req: Request) throws -> Playlist {
+    private func getPlaylist(req: Request) async throws -> Playlist {
         let ds = Datastore.shared()
         if let id = req.parameters.get("id") {
-            if let playlist = try ds.getPlaylist(id) {
+            if let playlist = try await ds.getPlaylist(id) {
                 return playlist
             }
         }
@@ -67,7 +67,7 @@ struct PlaylistController: RouteCollection {
     }
 
     // POST /playlists/:id
-    private func postPlaylist(req: Request) throws -> Transaction {
+    private func postPlaylist(req: Request) async throws -> Transaction {
         let ds = Datastore.shared()
         let id = req.parameters.get("id")!
         let playlist = try req.content.decode(Playlist.self)
@@ -77,14 +77,14 @@ struct PlaylistController: RouteCollection {
         }
 
         do {
-            return try ds.postPlaylist(playlist)
+            return try await ds.postPlaylist(playlist)
         } catch {
             throw Abort(.conflict)
         }
     }
 
     // PUT /playlists/:id
-    private func putPlaylist(req: Request) throws -> Transaction {
+    private func putPlaylist(req: Request) async throws -> Transaction {
         let ds = Datastore.shared()
         let id = req.parameters.get("id")!
         let playlist = try req.content.decode(Playlist.self)
@@ -93,15 +93,15 @@ struct PlaylistController: RouteCollection {
             throw Abort(.conflict)
         }
 
-        return try ds.putPlaylist(playlist)
+        return try await ds.putPlaylist(playlist)
     }
 
     // DELETE /playlists/:id
-    private func deletePlaylist(req: Request) throws -> Transaction {
+    private func deletePlaylist(req: Request) async throws -> Transaction {
         let ds = Datastore.shared()
         let id = req.parameters.get("id")!
 
-        return try ds.deletePlaylist(id)
+        return try await ds.deletePlaylist(id)
     }
 }
 

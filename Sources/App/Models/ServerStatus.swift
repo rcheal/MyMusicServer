@@ -46,8 +46,8 @@ extension APIServerStatus: Content {
         serverStatus.name = app.http.server.configuration.serverName ?? Host.current().localizedName ?? "Unknown"
         serverStatus.address = "\(hostname):\(app.http.server.configuration.port)"
         serverStatus.albumCount = try await ds.getAlbumCount()
-        serverStatus.singleCount = ds.getSingleCount()
-        serverStatus.playlistCount = ds.getPlaylistCount()
+        serverStatus.singleCount = try await ds.getSingleCount()
+        serverStatus.playlistCount = try await ds.getPlaylistCount()
         serverStatus.lastTransactionTime = ds.getLastTransactionTime()
         return serverStatus
     }
@@ -66,8 +66,8 @@ extension APIServerStatus: Content {
         serverStatus.name = app.http.server.configuration.serverName ?? Host.current().localizedName ?? "Unknown"
         serverStatus.address = "\(hostname):\(app.http.server.configuration.port)"
         serverStatus.albumCount = try await ds.getAlbumCount()
-        serverStatus.singleCount = ds.getSingleCount()
-        serverStatus.playlistCount = ds.getPlaylistCount()
+        serverStatus.singleCount = try await ds.getSingleCount()
+        serverStatus.playlistCount = try await ds.getPlaylistCount()
         serverStatus.lastTransactionTime = ds.getLastTransactionTime()
         return serverStatus
     }
