@@ -11,19 +11,27 @@ public func configure(_ app: Application) throws {
     switch app.environment {
     case .production:
         app.http.server.configuration.hostname = "0.0.0.0"
-        app.http.server.configuration.port = 7180
+        app.http.server.configuration.port = 8080
+        app.http.server.configuration.serverName = "MyMusic-Server"
     case .testing:
         app.http.server.configuration.hostname = "127.0.0.1"
         app.http.server.configuration.port = 8888
+        app.http.server.configuration.serverName = "Roberts-Mac-Studio"
         isMemory = true
     case .development:
         app.http.server.configuration.hostname = "0.0.0.0"
         app.http.server.configuration.port = 7180
+        app.http.server.configuration.serverName = "Roberts-Mac-Studio"
     default:
         break
             
     }
-    
+
+    let dbUser = Environment.get("DB_USER") ?? "bob"
+    let dbPassword = Environment.get("DB_PASSWORD") ?? ""
+    let database = Environment.get("DATABASE") ?? "mymusic"
+    let dbHostname = Environment.get("DB_HOSTNAME") ?? "localhost"
+    let dbPort = Int(Environment.get("DB_PORT") ?? "5432") ?? 5432
     
     // uncomment to serve files from /Public folder
     // app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
@@ -40,11 +48,11 @@ public func configure(_ app: Application) throws {
     Datastore.baseURL = baseURL
     switch app.environment {
     case .production:
-        app.databases.use(.postgres(hostname: "localhost", port: 5432, username: "bob", password: "", database: "mymusic"), as: .psql)
+        app.databases.use(.postgres(hostname: dbHostname, port: dbPort, username: dbUser, password: dbPassword, database: database), as: .psql)
     case .testing:
-        app.databases.use(.postgres(hostname: "localhost", port: 5432, username: "bob", password: "", database: "mymusictest"), as: .psql)
+        app.databases.use(.postgres(hostname: dbHostname, port: dbPort, username: dbUser, password: dbPassword, database: "\(database)test"), as: .psql)
     case .development:
-        app.databases.use(.postgres(hostname: "localhost", port: 5432, username: "bob", password: "", database: "mymusicdev"), as: .psql)
+        app.databases.use(.postgres(hostname: dbHostname, port: dbPort, username: dbUser, password: dbPassword, database: "\(database)dev"), as: .psql)
     default:
         break
     }
