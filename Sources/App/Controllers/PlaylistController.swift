@@ -20,7 +20,7 @@ struct PlaylistController: RouteCollection {
         let playlist = playlists.grouped(":id")
         playlist.on(.HEAD, [], use: headPlaylist(req:))
         playlist.get(use: getPlaylist(req:))
-        playlist.on(.POST, [], body: .collect, use: postPlaylist(req:))
+        playlist.on(.POST, [], body: .collect(maxSize: 10_000_000), use: postPlaylist(req:))
         playlist.on(.PUT, [], body: .collect, use: putPlaylist(req:))
         playlist.delete(use: deletePlaylist(req:))
     }
@@ -43,10 +43,10 @@ struct PlaylistController: RouteCollection {
     }
 
     // HEAD /playlists/:id
-    private func headPlaylist(req: Request) throws -> HTTPResponseStatus {
+    private func headPlaylist(req: Request) async throws -> HTTPResponseStatus {
         let ds = Datastore.shared()
         if let id = req.parameters.get("id") {
-            if try ds.playlistExists(id) {
+            if try await ds.playlistExists(id) {
                 return(.ok)
             } else {
                 return(.notFound)

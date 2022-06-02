@@ -18,14 +18,14 @@ struct AlbumController: RouteCollection {
         let album = albums.grouped(":id")
         album.on(.HEAD, [], use: headAlbum(req:))
         album.get(use: getAlbum(req:))
-        album.on(.POST, [], body: .collect(maxSize: 200000), use: postAlbum(req:))
-        album.on(.PUT, [], body: .collect(maxSize: 200000), use: putAlbum(req:))
+        album.on(.POST, [], body: .collect(maxSize: 200_000), use: postAlbum(req:))
+        album.on(.PUT, [], body: .collect(maxSize: 200_000), use: putAlbum(req:))
         album.delete(use: deleteAlbum(req:))
 
         let file = album.grouped(":filename")
         file.get(use: getAlbumFile(req:))
-        file.on(.POST, [], body: .collect(maxSize: 400000000), use: postAlbumFile(req:))
-        file.on(.PUT, [], body: .collect(maxSize: 400000000), use: putAlbumFile(req:))
+        file.on(.POST, [], body: .collect(maxSize: 400_000_000), use: postAlbumFile(req:))
+        file.on(.PUT, [], body: .collect(maxSize: 400_000_000), use: putAlbumFile(req:))
         file.delete(use: deleteAlbumFile(req:))
 
     }

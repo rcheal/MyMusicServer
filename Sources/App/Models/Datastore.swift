@@ -697,17 +697,14 @@ class Datastore {
         return count
     }
     
-    func playlistExists(_ id: String) throws -> Bool {
+    func playlistExists(_ id: String) async throws -> Bool {
         var exists = false
         guard let db = Self.db else {
             return exists
         }
-        do {
-            if let uuid = UUID(uuidString: id) {
-                exists = try PlaylistModel.query(on: db)
-                    .filter(\.$id == uuid)
-                    .count()
-                    .wait() > 0
+        if let uuid = UUID(uuidString: id) {
+            do {
+                exists = try await PlaylistModel.find(uuid, on: db) != nil
             }
         }
         return exists
