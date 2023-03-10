@@ -7,7 +7,7 @@
 
 import Vapor
 import Fluent
-import MusicMetadata
+import MyMusic
 
 final class TransactionModel: Model {
 

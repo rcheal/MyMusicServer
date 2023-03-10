@@ -6,7 +6,7 @@
 //
 
 import Vapor
-import MusicMetadata
+import MyMusic
 
 extension Album: Content {
     

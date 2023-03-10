@@ -6,9 +6,9 @@
 //
 
 import Vapor
-import MusicMetadata
+import MyMusic
 
-var myMusicServerVersion = "1.0.0" // You must manually sync this with the git tag
+var myMusicServerVersion = "2.0.3" // You must manually sync this with the git tag
 var myMusicApiVersions = "v1"  // comma separated list of supported api versions
 
 class ServerState {

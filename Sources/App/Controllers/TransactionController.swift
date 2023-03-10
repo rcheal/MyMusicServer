@@ -6,7 +6,7 @@
 //
 
 import Vapor
-import MusicMetadata
+import MyMusic
 
 struct TransactionController: RouteCollection {
     func boot(routes: RoutesBuilder) throws {
@@ -17,11 +17,17 @@ struct TransactionController: RouteCollection {
     private func getTransactions(req: Request) async throws -> APITransactions {
         let ds = Datastore.shared()
         let query = try req.query.decode(StartTime.self)
+        var transactions: [Transaction] = []
+        var transactionCount = 0
         if let startTime = query.startTime {
-            return APITransactions(transactions: try await ds.getTransactions(since: startTime))
+            transactions = try await ds.getTransactions(since: startTime)
+            transactionCount = transactions.count
         } else {
-            return APITransactions(transactions: try await ds.getTransactions(since: "20000101"))
+            transactions = try await ds.getTransactions(since: "0")
+            transactionCount = transactions.count
         }
+        let metadata = APIMetadata(totalCount: transactionCount, limit: transactionCount, offset: 0)
+        return APITransactions(transactions: transactions, _metadata: metadata)
     }
 
 }

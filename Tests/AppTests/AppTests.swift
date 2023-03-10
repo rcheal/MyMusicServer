@@ -1,6 +1,6 @@
 @testable import App
 import XCTVapor
-import MusicMetadata
+import MyMusic
 
 let albumsEndpoint = "v1/albums"
 let singlesEndpoint = "v1/singles"
