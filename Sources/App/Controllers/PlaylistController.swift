@@ -20,8 +20,8 @@ struct PlaylistController: RouteCollection {
         let playlist = playlists.grouped(":id")
         playlist.on(.HEAD, [], use: headPlaylist(req:))
         playlist.get(use: getPlaylist(req:))
-        playlist.on(.POST, [], body: .collect(maxSize: 10_000_000), use: postPlaylist(req:))
-        playlist.on(.PUT, [], body: .collect, use: putPlaylist(req:))
+        playlist.on(.POST, [], body: .collect(maxSize: 400_000_000), use: postPlaylist(req:))
+        playlist.on(.PUT, [], body: .collect(maxSize: 400_000_000), use: putPlaylist(req:))
         playlist.delete(use: deletePlaylist(req:))
     }
 

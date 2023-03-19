@@ -20,14 +20,14 @@ struct SingleController: RouteCollection {
         let single = singles.grouped(":id")
         single.on(.HEAD, [], use: headSingle(req:))
         single.get(use: getSingle(req:))
-        single.on(.POST, [], body: .collect(maxSize: 200000), use: postSingle(req:))
-        single.on(.PUT, [], body: .collect(maxSize: 200000), use: putSingle(req:))
+        single.on(.POST, [], body: .collect(maxSize: 200_000), use: postSingle(req:))
+        single.on(.PUT, [], body: .collect(maxSize: 200_000), use: putSingle(req:))
         single.delete(use: deleteSingle(req:))
 
         let file = single.grouped(":filename")
         file.get(use: getSingleFile(req:))
-        file.on(.POST, [], body: .collect(maxSize: 400000000), use: postSingleFile(req:))
-        file.on(.PUT, [], body: .collect(maxSize: 400000000), use: putSingleFile(req:))
+        file.on(.POST, [], body: .collect(maxSize: 400_000_000), use: postSingleFile(req:))
+        file.on(.PUT, [], body: .collect(maxSize: 400_000_000), use: putSingleFile(req:))
         file.delete(use: deleteSingleFile(req:))
 
     }
