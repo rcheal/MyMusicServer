@@ -570,7 +570,7 @@ class Datastore {
 
                     try await db.transaction { database in
                         try await singleModel.delete(on: database)
-                        try await transactionModel.delete(on: database)
+                        try await transactionModel.create(on: database)
                     }
                     return transaction
                 }
@@ -842,7 +842,7 @@ class Datastore {
 
                 try await db.transaction { database in
                     try await playlistModel.delete(on: database)
-                    try await transactionModel.delete(on: database)
+                    try await transactionModel.create(on: database)
                 }
                 return transaction
             } catch {
