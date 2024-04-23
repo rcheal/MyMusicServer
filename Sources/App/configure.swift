@@ -32,7 +32,11 @@ public func configure(_ app: Application) throws {
     let database = Environment.get("DATABASE") ?? "mymusic"
     let dbHostname = Environment.get("DB_HOSTNAME") ?? "localhost"
     let dbPort = Int(Environment.get("DB_PORT") ?? "5432") ?? 5432
-    
+
+    let dbConfig = PostgresConfiguration(hostname: dbHostname, port: dbPort, username: dbUser, password: dbPassword, database: database)
+    let dbConfigTest = PostgresConfiguration(hostname: dbHostname, port: dbPort, username: dbUser, password: dbPassword, database: "\(database)test")
+    let dbConfigDev = PostgresConfiguration(hostname: dbHostname, port: dbPort, username: dbUser, password: dbPassword, database: "\(database)dev")
+
     // uncomment to serve files from /Public folder
     // app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))
 
@@ -48,11 +52,11 @@ public func configure(_ app: Application) throws {
     Datastore.baseURL = baseURL
     switch app.environment {
     case .production:
-        app.databases.use(.postgres(hostname: dbHostname, port: dbPort, username: dbUser, password: dbPassword, database: database), as: .psql)
+        app.databases.use(.postgres(configuration: dbConfig), as: .psql)
     case .testing:
-        app.databases.use(.postgres(hostname: dbHostname, port: dbPort, username: dbUser, password: dbPassword, database: "\(database)test"), as: .psql)
+        app.databases.use(.postgres(configuration: dbConfigTest), as: .psql)
     case .development:
-        app.databases.use(.postgres(hostname: dbHostname, port: dbPort, username: dbUser, password: dbPassword, database: "\(database)dev"), as: .psql)
+        app.databases.use(.postgres(configuration: dbConfigDev), as: .psql)
     default:
         break
     }
