@@ -61,7 +61,7 @@ class Datastore {
 
         do {
             transactions = try await TransactionModel.query(on: db)
-                .filter(\.$time >= timestamp)
+                .filter(\.$time > timestamp)
                 .sort(\.$time, .ascending)
                 .all()
                 .map { model -> Transaction in
