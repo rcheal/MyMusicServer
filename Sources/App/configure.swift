@@ -33,9 +33,9 @@ public func configure(_ app: Application) throws {
     let dbHostname = Environment.get("DB_HOSTNAME") ?? "localhost"
     let dbPort = Int(Environment.get("DB_PORT") ?? "5432") ?? 5432
 
-    let dbConfig = PostgresConfiguration(hostname: dbHostname, port: dbPort, username: dbUser, password: dbPassword, database: database)
-    let dbConfigTest = PostgresConfiguration(hostname: dbHostname, port: dbPort, username: dbUser, password: dbPassword, database: "\(database)test")
-    let dbConfigDev = PostgresConfiguration(hostname: dbHostname, port: dbPort, username: dbUser, password: dbPassword, database: "\(database)dev")
+    let dbConfig = SQLPostgresConfiguration(hostname: dbHostname, port: dbPort, username: dbUser, password: dbPassword, database: database, tls: .disable)
+    let dbConfigTest = SQLPostgresConfiguration(hostname: dbHostname, port: dbPort, username: dbUser, password: dbPassword, database: "\(database)test", tls: .disable)
+    let dbConfigDev = SQLPostgresConfiguration(hostname: dbHostname, port: dbPort, username: dbUser, password: dbPassword, database: "\(database)dev", tls: .disable)
 
     // uncomment to serve files from /Public folder
     // app.middleware.use(FileMiddleware(publicDirectory: app.directory.publicDirectory))

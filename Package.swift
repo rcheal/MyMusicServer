@@ -1,8 +1,8 @@
-// swift-tools-version:5.5
+// swift-tools-version:5.10
 import PackageDescription
 
 let package = Package(
-    name: "MyMusicPiServer",
+    name: "MyMusicServer",
     platforms: [
        .macOS(.v12)
     ],
@@ -11,7 +11,7 @@ let package = Package(
         .package(url: "https://github.com/vapor/vapor.git", from: "4.50.0"),
         .package(url: "https://github.com/vapor/fluent.git", from: "4.4.0"),
         .package(url: "https://github.com/vapor/fluent-postgres-driver.git", from: "2.0.0"),
-        .package(name: "MyMusic", url: "https://github.com/rcheal/MyMusic.git", from: "2.1.0")
+        .package(url: "https://github.com/rcheal/MyMusic.git", from: "2.1.0")
     ],
     targets: [
         .target(
@@ -20,7 +20,7 @@ let package = Package(
                 .product(name: "Fluent", package: "fluent"),
                 .product(name: "FluentPostgresDriver", package: "fluent-postgres-driver"),
                 .product(name: "Vapor", package: "vapor"),
-                .byName(name: "MyMusic")
+                .product(name: "MyMusic", package: "MyMusic")
             ],
             swiftSettings: [
                 // Enable better optimizations when building in Release configuration. Despite the use of

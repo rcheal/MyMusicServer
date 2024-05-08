@@ -319,7 +319,30 @@ class Datastore {
         }
         return nil
     }
-    
+
+    /**
+     Get album directory path and album file path
+
+     Deletes row with matching id from singles.
+     Also deletes the directory containing the albums audiofiles.
+
+     - parameter id: Unique id of album
+
+     - parameter filename: Name of file (w/o path)
+
+     - returns: Tuple containing path containing file and full path of file (dir: String?, filePath: String?)
+
+     - throws: Database or filesystem errors.
+     */
+    func getAlbumFilePaths(_ id: String, filename: String) async throws -> (String?, String?) {
+        if let albumDirectoryURL = try await getAlbumDirectoryURL(id) {
+            let dir = albumDirectoryURL.path
+            let file = albumDirectoryURL.appendingPathComponent(filename).path
+            return (dir, file)
+        }
+        return (nil, nil)
+    }
+
     func getAlbumFile(_ id: String, filename: String) async throws -> Data? {
         if let albumURL = try await getAlbumDirectoryURL(id) {
             let fileURL = albumURL.appendingPathComponent(filename)
