@@ -26,8 +26,8 @@ struct SingleController: RouteCollection {
 
         let file = single.grouped(":filename")
         file.get(use: getSingleFile(req:))
-        file.on(.POST, [], body: .collect(maxSize: 400_000_000), use: postSingleFile(req:))
-        file.on(.PUT, [], body: .collect(maxSize: 400_000_000), use: putSingleFile(req:))
+        file.on(.POST, [], body: .stream, use: postSingleFile(req:))
+        file.on(.PUT, [], body: .stream, use: putSingleFile(req:))
         file.delete(use: deleteSingleFile(req:))
 
     }
@@ -121,33 +121,32 @@ struct SingleController: RouteCollection {
 
     // POST /singles/:id/:filename
     private func postSingleFile(req: Request) async throws -> HTTPResponseStatus {
-        let ds = Datastore.shared()
         if let id = req.parameters.get("id"),
            let filename = req.parameters.get("filename") {
-            if let value = req.body.data {
-                let data = Data(buffer: value)
-                try await ds.postSingleFile(id, filename: filename, data: data)
-                return HTTPResponseStatus.ok
-            }
-            return HTTPResponseStatus.noContent
-        }
 
-        return HTTPResponseStatus.badRequest
+            let ds = Datastore.shared()
+            let (dirPath, filePath) = try await ds.getSingleFilePaths(id, filename: filename)
+            if let dirPath, let filePath {
+                let futureStatus = try ds.streamFile(req: req, filePath: filePath, dirPath: dirPath)
+                return try await futureStatus.get()
+            }
+        }
+        return .badRequest
     }
 
     // PUT /singles/:id/:filename
     private func putSingleFile(req: Request) async throws -> HTTPResponseStatus {
-        let ds = Datastore.shared()
         if let id = req.parameters.get("id"),
            let filename = req.parameters.get("filename") {
-            if let value = req.body.data {
-                let data = Data(buffer: value)
-                try await ds.putSingleFile(id, filename: filename, data: data)
-                return HTTPResponseStatus.ok
+
+            let ds = Datastore.shared()
+            let (dirPath, filePath) = try await ds.getSingleFilePaths(id, filename: filename)
+            if let dirPath, let filePath {
+                let futureStatus = try ds.streamFile(req: req, filePath: filePath, dirPath: dirPath)
+                return try await futureStatus.get()
             }
-            return HTTPResponseStatus.noContent
         }
-        return HTTPResponseStatus.badRequest
+        return .badRequest
     }
 
     // DELETE /singles/:id/:filename

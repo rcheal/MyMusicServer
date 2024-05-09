@@ -25,7 +25,7 @@ struct AlbumController: RouteCollection {
         let file = album.grouped(":filename")
         file.get(use: getAlbumFile(req:))
         file.on(.POST, [], body: .stream, use: postAlbumFile(req:))
-        file.on(.PUT, [], body: .collect(maxSize: 400_000_000), use: putAlbumFile(req:))
+        file.on(.PUT, [], body: .stream, use: putAlbumFile(req:))
         file.delete(use: deleteAlbumFile(req:))
 
     }
@@ -55,97 +55,48 @@ struct AlbumController: RouteCollection {
         throw Abort(.badRequest)
     }
 
-
-    private func createFile(_ filePath: String, dirPath: String) -> Bool {
-        let fm = FileManager.default
-        do {
-            if !fm.fileExists(atPath: filePath) {
-                try fm.createDirectory(atPath: dirPath, withIntermediateDirectories: true, attributes: nil)
-            }
-        } catch {
-            return false
-        }
-        return fm.createFile(atPath: filePath, contents: nil)
-    }
-
-    private func postAlbumFile(req: Request, filePath: String, dirPath: String) throws -> EventLoopFuture<HTTPResponseStatus> {
-        let statusPromise = req.eventLoop.makePromise(of: HTTPResponseStatus.self)
-        guard createFile(filePath, dirPath: dirPath) else {
-            throw Abort(HTTPResponseStatus.internalServerError)
-        }
-
-        // Configure SwiftNIO to create a file stream.
-        let nbFileIO = NonBlockingFileIO(threadPool: req.application.threadPool) // Should move out of the func, but left it here for ease of understanding.
-        let fileHandle = nbFileIO.openFile(path: filePath, mode: .write, eventLoop: req.eventLoop)
-
-        // Launch the stream...
-        return fileHandle.map { handle in
-            // Vapor request will now feed us bytes
-            req.body.drain { someResult -> EventLoopFuture<Void> in
-                let drainPromise = req.eventLoop.makePromise(of: Void.self)
-
-                switch someResult {
-                case .buffer(let byteBuffer):
-                    // We have bytes. So, write them to disk, and handle our promise
-                    _ = nbFileIO.write(fileHandle: handle, buffer: byteBuffer, eventLoop: req.eventLoop)
-                        .always { outcome in
-                            switch outcome {
-                            case .success(let success):
-                                drainPromise.succeed(success)
-                            case .failure(let failure):
-                                drainPromise.fail(failure)
-                            }
-                        }
-                case .error(let error):
-                    do {
-                        // Handle errors by closing and removing our file
-                        req.logger.error("Upload error on \(filePath): \(error.localizedDescription)")
-                        try? handle.close()
-                        try FileManager.default.removeItem(atPath: filePath)
-                    } catch {
-                        req.logger.error("Catastrophic failure on \(error.localizedDescription)")
-                    }
-                        // Inform the Client
-                    statusPromise.succeed(.internalServerError)
-                case .end:
-                    try? handle.close()
-                    drainPromise.succeed(())
-                    statusPromise.succeed(.ok)
-                }
-                return drainPromise.futureResult
-            }
-        }.transform(to: statusPromise.futureResult)
-    }
-
     private func postAlbumFile(req: Request) async throws -> HTTPResponseStatus {
         if let id = req.parameters.get("id"),
            let filename = req.parameters.get("filename") {
 
-            let (dirPath, filePath) = try await Datastore.shared().getAlbumFilePaths(id, filename: filename)
+            let ds = Datastore.shared()
+            let (dirPath, filePath) = try await ds.getAlbumFilePaths(id, filename: filename)
             if let dirPath, let filePath {
-
-                let futureStatus = try postAlbumFile(req: req, filePath: filePath, dirPath: dirPath)
+                let futureStatus = try ds.streamFile(req: req, filePath: filePath, dirPath: dirPath)
                 return try await futureStatus.get()
-            } else {
-                return .internalServerError
             }
         }
-        return HTTPResponseStatus.badRequest
+        return .badRequest
     }
 
     // PUT /albums/:id/:filename
     private func putAlbumFile(req: Request) async throws -> HTTPResponseStatus {
         if let id = req.parameters.get("id"),
            let filename = req.parameters.get("filename") {
-            if let value = req.body.data {
-                let data = Data(buffer: value)
-                try await Datastore.shared().putAlbumFile(id, filename: filename, data: data)
-                return HTTPResponseStatus.ok
+
+            let ds = Datastore.shared()
+
+            let (dirPath, filePath) = try await ds.getAlbumFilePaths(id, filename: filename)
+            if let dirPath, let filePath {
+                let futureStatus = try ds.streamFile(req: req, filePath: filePath, dirPath: dirPath)
+                return try await futureStatus.get()
             }
-            return HTTPResponseStatus.noContent
         }
-        return HTTPResponseStatus.badRequest
+        return .badRequest
     }
+
+//    private func putAlbumFile(req: Request) async throws -> HTTPResponseStatus {
+//        if let id = req.parameters.get("id"),
+//           let filename = req.parameters.get("filename") {
+//            if let value = req.body.data {
+//                let data = Data(buffer: value)
+//                try await Datastore.shared().putAlbumFile(id, filename: filename, data: data)
+//                return HTTPResponseStatus.ok
+//            }
+//            return HTTPResponseStatus.noContent
+//        }
+//        return HTTPResponseStatus.badRequest
+//    }
 
     // DELETE /albums/:id/:filename
     private func deleteAlbumFile(req: Request) async throws -> HTTPResponseStatus {

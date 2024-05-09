@@ -3,8 +3,6 @@ import Fluent
 import FluentSQL
 import FluentPostgresDriver
 
-var myMusicServerVersion = "2.0.10" // You must manually sync this with the git tag
-
 // configures your application
 public func configure(_ app: Application) throws {
     

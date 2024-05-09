@@ -91,6 +91,88 @@ class Datastore {
         }
     }
     
+    // MARK: File functions
+
+    /**
+     Create file
+
+     Creates new empty file.
+
+     - parameter filePath: Full path of file to create
+
+     - parameter dirPath: Path of containing directory
+
+     - parameter replace: Flag indicating if existing file should be replace.  Fails if set to true and file already exists.
+
+     - returns: Bool - true if file was created
+     */
+    private func createFile(_ filePath: String, dirPath: String, replace: Bool = false) -> Bool {
+        let fm = FileManager.default
+        do {
+            if !fm.fileExists(atPath: filePath) {
+                try fm.createDirectory(atPath: dirPath, withIntermediateDirectories: true, attributes: nil)
+            }
+        } catch {
+            return false
+        }
+        if !replace && fm.fileExists(atPath: filePath) {
+            return false
+        }
+        return fm.createFile(atPath: filePath, contents: nil)
+    }
+
+    func streamFile(req: Request, filePath: String, dirPath: String) throws -> EventLoopFuture<HTTPResponseStatus> {
+
+        let statusPromise = req.eventLoop.makePromise(of: HTTPResponseStatus.self)
+        guard Datastore.shared().createFile(filePath, dirPath: dirPath, replace: req.method == .PUT) else {
+            throw Abort(.conflict)
+        }
+
+        // Configure SwiftNIO to create a file stream.
+        let nbFileIO = NonBlockingFileIO(threadPool: req.application.threadPool) // Should move out of the func, but left it here for ease of understanding.
+        let fileHandle = nbFileIO.openFile(path: filePath, mode: .write, eventLoop: req.eventLoop)
+
+        // Launch the stream...
+        return fileHandle.map { handle in
+            // Vapor request will now feed us bytes
+            req.body.drain { someResult -> EventLoopFuture<Void> in
+                let drainPromise = req.eventLoop.makePromise(of: Void.self)
+
+                switch someResult {
+                case .buffer(let byteBuffer):
+                    // We have bytes. So, write them to disk, and handle our promise
+                    _ = nbFileIO.write(fileHandle: handle, buffer: byteBuffer, eventLoop: req.eventLoop)
+                        .always { outcome in
+                            switch outcome {
+                            case .success(let success):
+                                drainPromise.succeed(success)
+                            case .failure(let failure):
+                                drainPromise.fail(failure)
+                            }
+                        }
+                case .error(let error):
+                    do {
+                        // Handle errors by closing and removing our file
+                        req.logger.error("Upload error on \(filePath): \(error.localizedDescription)")
+                        try? handle.close()
+                        try FileManager.default.removeItem(atPath: filePath)
+                    } catch {
+                        req.logger.error("Catastrophic failure on \(error.localizedDescription)")
+                    }
+                        // Inform the Client
+                    statusPromise.succeed(.internalServerError)
+                case .end:
+                    try? handle.close()
+                    drainPromise.succeed(())
+                    statusPromise.succeed(.ok)
+                }
+                return drainPromise.futureResult
+            }
+        }.transform(to: statusPromise.futureResult)
+    }
+
+
+
     // MARK: Album functions
     
     func getAlbums(limit: Int, offset: Int, fields: String?) async throws -> [Album] {
@@ -624,6 +706,29 @@ class Datastore {
         return nil
     }
     
+    /**
+     Get single directory path and single file path
+
+     Deletes row with matching id from singles.
+     Also deletes the directory containing the single audiofile.
+
+     - parameter id: Unique id of single
+
+     - parameter filename: Name of file (w/o path)
+
+     - returns: Tuple containing path containing file and full path of file (dir: String?, filePath: String?)
+
+     - throws: Database or filesystem errors.
+     */
+    func getSingleFilePaths(_ id: String, filename: String) async throws -> (String?, String?) {
+        if let singleDirectoryURL = try await getSingleDirectoryURL(id) {
+            let dir = singleDirectoryURL.path
+            let file = singleDirectoryURL.appendingPathComponent(filename).path
+            return (dir, file)
+        }
+        return (nil, nil)
+    }
+
     func getSingleFile(_ id: String, filename: String) async throws -> Data? {
         if let singleDirectoryURL = try await getSingleDirectoryURL(id) {
             let fileURL = singleDirectoryURL.appendingPathComponent(filename)
