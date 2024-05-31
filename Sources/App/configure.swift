@@ -65,6 +65,7 @@ public func configure(_ app: Application) throws {
     let _ = Datastore.create(memory: isMemory)
 
     app.migrations.add(CreateMyMusicDB())
+    app.migrations.add(TransactionTitle())
     let _ = app.autoMigrate()
 
     // register routes

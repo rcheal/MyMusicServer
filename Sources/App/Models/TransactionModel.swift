@@ -16,6 +16,9 @@ final class TransactionModel: Model {
     @ID(key: .id)
     var id: UUID?
 
+    @Field(key: "title")
+    var title: String
+    
     @Field(key: "time")
     var time: String
 
@@ -44,5 +47,6 @@ final class TransactionModel: Model {
         self.method = transaction.method
         self.entity = transaction.entity
         self.entityid = transaction.id
+        self.title = transaction.title
     }
 }

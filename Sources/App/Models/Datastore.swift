@@ -65,7 +65,7 @@ class Datastore {
                 .sort(\.$time, .ascending)
                 .all()
                 .map { model -> Transaction in
-                    var transaction = Transaction(method: model.method, entity: model.entity, id: model.entityid)
+                    var transaction = Transaction(method: model.method, entity: model.entity, id: model.entityid, title: model.title)
                     transaction.time = model.time
                     return transaction
                 }
@@ -276,7 +276,7 @@ class Datastore {
             throw Abort(.serviceUnavailable)
         }
 
-        let transaction = Transaction(method: "POST", entity: "album", id: album.id)
+        let transaction = Transaction(method: "POST", entity: "album", id: album.id, title: album.title)
         if let json = album.json {
             do {
                 let albumModel = AlbumModel(id: UUID(uuidString: album.id), json: json)
@@ -300,7 +300,7 @@ class Datastore {
             throw Abort(.serviceUnavailable)
         }
 
-        let transaction = Transaction(method: "PUT", entity: "album", id: album.id)
+        let transaction = Transaction(method: "PUT", entity: "album", id: album.id, title: album.title)
         if let json = album.json {
             var albumModel: AlbumModel?
             do {
@@ -346,8 +346,6 @@ class Datastore {
             throw Abort(.serviceUnavailable)
         }
 
-        let transaction = Transaction(method: "DELETE", entity: "album", id: id)
-
         do {
             albumModel = try await AlbumModel.find(UUID(uuidString: id), on: db)
         } catch {
@@ -358,6 +356,8 @@ class Datastore {
 
             do {
                 if let album = Album.decodeFrom(json: albumModel.json) {
+                    let transaction = Transaction(method: "DELETE", entity: "album", id: id, title: album.title)
+
                     if let albumDir = album.directory {
                         let fm = FileManager.default
 
@@ -577,7 +577,7 @@ class Datastore {
             throw Abort(.serviceUnavailable)
         }
 
-        let transaction = Transaction(method: "POST", entity: "single", id: single.id)
+        let transaction = Transaction(method: "POST", entity: "single", id: single.id, title: single.title)
         if let json = single.json,
            let uuid = UUID(uuidString: single.id) {
             if try await SingleModel.find(uuid, on: db) != nil {
@@ -607,7 +607,7 @@ class Datastore {
             throw Abort(.serviceUnavailable)
         }
 
-        let transaction = Transaction(method: "PUT", entity: "single", id: single.id)
+        let transaction = Transaction(method: "PUT", entity: "single", id: single.id, title: single.title)
         if let json = single.json {
             var singleModel: SingleModel?
             do {
@@ -653,8 +653,6 @@ class Datastore {
             throw Abort(.serviceUnavailable)
         }
 
-        let transaction = Transaction(method: "DELETE", entity: "single", id: id)
-
         do {
             singleModel = try await SingleModel.find(UUID(uuidString: id), on: db)
         } catch {
@@ -670,6 +668,8 @@ class Datastore {
                         let dirURL = fileRootURL.appendingPathComponent(singleDir)
                         try? fm.removeItem(at: dirURL)
                     }
+
+                    let transaction = Transaction(method: "DELETE", entity: "single", id: id, title: single.title)
 
                     let transactionModel = TransactionModel(transaction: transaction)
 
@@ -880,7 +880,7 @@ class Datastore {
             throw Abort(.serviceUnavailable)
         }
 
-        let transaction = Transaction(method: "POST", entity: "playlist", id: playlist.id)
+        let transaction = Transaction(method: "POST", entity: "playlist", id: playlist.id, title: playlist.title)
         if let json = playlist.json,
            let uuid = UUID(uuidString: playlist.id) {
             if try await PlaylistModel.find(uuid, on: db) != nil {
@@ -910,7 +910,7 @@ class Datastore {
             throw Abort(.serviceUnavailable)
         }
 
-        let transaction = Transaction(method: "PUT", entity: "playlist", id: playlist.id)
+        let transaction = Transaction(method: "PUT", entity: "playlist", id: playlist.id, title: playlist.title)
         if let json = playlist.json {
             var playlistModel: PlaylistModel?
             do {
@@ -956,8 +956,6 @@ class Datastore {
             throw Abort(.serviceUnavailable)
         }
 
-        let transaction = Transaction(method: "DELETE", entity: "playlist", id: id)
-
         do {
             playlistModel = try await PlaylistModel.find(UUID(uuidString: id), on: db)
         } catch {
@@ -966,13 +964,19 @@ class Datastore {
 
         if let playlistModel = playlistModel {
             do {
-                let transactionModel = TransactionModel(transaction: transaction)
-
-                try await db.transaction { database in
-                    try await playlistModel.delete(on: database)
-                    try await transactionModel.create(on: database)
+                if let playlist = Playlist.decodeFrom(json: playlistModel.json) {
+                    
+                    let transaction = Transaction(method: "DELETE", entity: "playlist", id: id, title: playlist.title)
+                    
+                    let transactionModel = TransactionModel(transaction: transaction)
+                    
+                    try await db.transaction { database in
+                        try await playlistModel.delete(on: database)
+                        try await transactionModel.create(on: database)
+                    }
+                    
+                    return transaction
                 }
-                return transaction
             } catch {
                 throw Abort(.conflict)
             }
