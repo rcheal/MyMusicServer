@@ -69,8 +69,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/rcheal/MyMusic.git",
       "state" : {
-        "revision" : "d1423e46f4d7a5ffc4f9d9c131504547235d090a",
-        "version" : "2.1.39"
+        "revision" : "83bddf421f27a330915a23998cc7c8fa7ccf4a3f",
+        "version" : "2.1.40"
       }
     },
     {
